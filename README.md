@@ -70,18 +70,18 @@ This shows a QR code in the terminal. Connect from any client. This path is usef
 
 ### Web app via npm
 
-If you want to hand the web client to someone as an npm package, publish `@getpaseo/web`.
+If you want to hand the web client to someone as an npm package, publish `@ck123pm/paseo-web`.
 
 Run it directly without installing:
 
 ```bash
-npx @getpaseo/web --open
+npx @ck123pm/paseo-web --open
 ```
 
 Or install it globally:
 
 ```bash
-npm install -g @getpaseo/web
+npm install -g @ck123pm/paseo-web
 paseo-web --open
 ```
 

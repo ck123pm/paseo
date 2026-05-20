@@ -1,4 +1,4 @@
-# `@getpaseo/web`
+# `@ck123pm/paseo-web`
 
 Install and run the packaged Paseo web app locally with an embedded daemon.
 
@@ -7,13 +7,13 @@ Install and run the packaged Paseo web app locally with an embedded daemon.
 Run without installing:
 
 ```bash
-npx @getpaseo/web --open
+npx @ck123pm/paseo-web --open
 ```
 
 Install globally:
 
 ```bash
-npm install -g @getpaseo/web
+npm install -g @ck123pm/paseo-web
 paseo-web --open
 ```
 
