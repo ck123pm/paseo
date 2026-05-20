@@ -142,7 +142,15 @@ Single file, validated with `PersistedConfigSchema`.
     appendSystemPrompt: string,    // appended to supported provider system/developer prompts
     cors: { allowedOrigins: string[] },
     relay: { enabled: boolean, endpoint: string, publicEndpoint: string, useTls: boolean, publicUseTls: boolean },
-    auth: { password: string }    // bcrypt hash, optional
+    auth: { password: string },   // bcrypt hash, optional
+    workspaces: {
+      git: {
+        backgroundFetchIntervalMs: number,               // positive integer, default 900000
+        selfHealIntervalMs: number,                      // positive integer, default 300000
+        workingTreeWatchFallbackRefreshMs: number        // positive integer, default 60000
+      },
+      reconcileIntervalMs: number                        // positive integer, default 300000
+    }
   },
   app: {
     baseUrl: string
@@ -169,7 +177,9 @@ Single file, validated with `PersistedConfigSchema`.
 }
 ```
 
-All fields are optional with sensible defaults.
+All fields are optional with sensible defaults. Workspace polling falls back to 15-minute
+background fetch, 5-minute self-heal, 60-second working-tree fallback refresh, and 5-minute
+reconciliation when omitted.
 
 ---
 

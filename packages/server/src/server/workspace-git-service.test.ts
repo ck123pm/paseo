@@ -6,6 +6,8 @@ import type pino from "pino";
 import type { GitHubService } from "../services/github-service.js";
 import type { CheckoutStatusGit, PullRequestStatusResult } from "../utils/checkout-git.js";
 import {
+  DEFAULT_BACKGROUND_GIT_FETCH_INTERVAL_MS,
+  DEFAULT_WORKING_TREE_WATCH_FALLBACK_REFRESH_MS,
   WorkspaceGitServiceImpl,
   type WorkspaceGitRuntimeSnapshot,
 } from "./workspace-git-service.js";
@@ -178,6 +180,11 @@ function createGitHubServiceStub(): GitHubService {
 }
 
 interface CreateServiceTestOptions {
+  polling?: {
+    backgroundFetchIntervalMs?: number;
+    selfHealIntervalMs?: number;
+    workingTreeWatchFallbackRefreshMs?: number;
+  };
   getCheckoutStatus?: ReturnType<typeof vi.fn>;
   getCheckoutShortstat?: ReturnType<typeof vi.fn>;
   getPullRequestStatus?: ReturnType<typeof vi.fn>;
@@ -217,10 +224,12 @@ function buildDefaultTestServiceDeps() {
 }
 
 function createService(options?: CreateServiceTestOptions) {
+  const { polling, ...deps } = options ?? {};
   return new WorkspaceGitServiceImpl({
     logger: createLogger() as unknown as pino.Logger,
     paseoHome: "/tmp/paseo-test",
-    deps: { ...buildDefaultTestServiceDeps(), ...options },
+    polling,
+    deps: { ...buildDefaultTestServiceDeps(), ...deps },
   });
 }
 
@@ -479,7 +488,7 @@ describe("WorkspaceGitServiceImpl", () => {
     expect(hasOriginRemote).toHaveBeenCalledTimes(1);
     expect(runGitFetch).toHaveBeenCalledTimes(1);
 
-    await vi.advanceTimersByTimeAsync(180_000);
+    await vi.advanceTimersByTimeAsync(DEFAULT_BACKGROUND_GIT_FETCH_INTERVAL_MS);
     await flushPromises();
 
     expect(runGitFetch).toHaveBeenCalledTimes(2);
@@ -741,7 +750,7 @@ describe("WorkspaceGitServiceImpl", () => {
     service.dispose();
   });
 
-  test("sets a 5-second fallback polling interval when recursive watch is unavailable", async () => {
+  test("uses the default 60-second fallback polling interval when recursive watch is unavailable", async () => {
     if (process.platform === "linux") {
       // On Linux, recursive watch is never attempted — the service uses per-directory
       // watchers from the start. This scenario only applies to macOS/Windows where
@@ -761,11 +770,85 @@ describe("WorkspaceGitServiceImpl", () => {
       .mockImplementationOnce(() => createWatcher());
 
     const service = createService({ watch });
-    const subscription = await service.requestWorkingTreeWatch(REPO_CWD, vi.fn());
+    const listener = vi.fn();
+    const subscription = await service.requestWorkingTreeWatch(REPO_CWD, listener);
 
     expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(DEFAULT_WORKING_TREE_WATCH_FALLBACK_REFRESH_MS - 1);
+    expect(listener).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(listener).toHaveBeenCalledTimes(1);
 
     subscription.unsubscribe();
+    service.dispose();
+  });
+
+  test("uses injected polling intervals for repo fetch, self-heal, and watch fallback", async () => {
+    if (process.platform === "linux") {
+      return;
+    }
+
+    const getCheckoutStatus = vi.fn(async (cwd: string) => createCheckoutStatus(cwd));
+    const hasOriginRemoteDeferred = createDeferred<boolean>();
+    const hasOriginRemote = vi.fn(async () => hasOriginRemoteDeferred.promise);
+    const resolveAbsoluteGitDir = vi.fn(async () => join(REPO_CWD, ".git"));
+    const runGitFetch = vi.fn(async () => {});
+    const watch = vi
+      .fn()
+      .mockImplementationOnce((_watchPath: string, options: { recursive: boolean }) => {
+        if (options.recursive) {
+          throw new Error("recursive unsupported");
+        }
+        return createWatcher();
+      })
+      .mockImplementation(() => createWatcher());
+
+    const service = createService({
+      polling: {
+        backgroundFetchIntervalMs: 12_345,
+        selfHealIntervalMs: 23_456,
+        workingTreeWatchFallbackRefreshMs: 34_567,
+      },
+      getCheckoutStatus,
+      hasOriginRemote,
+      resolveAbsoluteGitDir,
+      runGitFetch,
+      watch,
+    });
+
+    const workspaceSubscription = service.registerWorkspace({ cwd: REPO_CWD }, vi.fn());
+    await vi.waitFor(() => {
+      expect(hasOriginRemote).toHaveBeenCalledTimes(1);
+    });
+
+    hasOriginRemoteDeferred.resolve(true);
+    await flushPromises();
+
+    expect(runGitFetch).toHaveBeenCalledTimes(1);
+    expect(getCheckoutStatus).toHaveBeenCalled();
+
+    getCheckoutStatus.mockClear();
+    await vi.advanceTimersByTimeAsync(12_344);
+    expect(runGitFetch).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await flushPromises();
+    expect(runGitFetch).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(23_455);
+    expect(getCheckoutStatus).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await flushPromises();
+    expect(getCheckoutStatus).toHaveBeenCalled();
+
+    const fallbackListener = vi.fn();
+    const watchSubscription = await service.requestWorkingTreeWatch(REPO_CWD, fallbackListener);
+    await vi.advanceTimersByTimeAsync(34_566);
+    expect(fallbackListener).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fallbackListener).toHaveBeenCalledTimes(1);
+
+    watchSubscription.unsubscribe();
+    workspaceSubscription.unsubscribe();
     service.dispose();
   });
 

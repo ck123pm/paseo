@@ -129,6 +129,7 @@ import type {
   AgentProviderRuntimeSettingsMap,
   ProviderOverride,
 } from "./agent/provider-launch-config.js";
+import type { WorkspacePollingRuntimeConfig } from "./config.js";
 import type { PersistedConfig } from "./persisted-config.js";
 import {
   ScriptRouteStore,
@@ -243,6 +244,7 @@ export interface PaseoDaemonConfig {
   relayPublicUseTls?: boolean;
   appBaseUrl?: string;
   auth?: DaemonAuthConfig;
+  workspacePolling?: WorkspacePollingRuntimeConfig;
   openai?: PaseoOpenAIConfig;
   speech?: PaseoSpeechConfig;
   voiceLlmProvider?: AgentProvider | null;
@@ -501,6 +503,7 @@ export async function createPaseoDaemon(
   const workspaceGitService = new WorkspaceGitServiceImpl({
     logger,
     paseoHome: config.paseoHome,
+    polling: config.workspacePolling?.git,
     deps: {
       github,
     },
@@ -542,6 +545,7 @@ export async function createPaseoDaemon(
     projectRegistry,
     workspaceRegistry,
     logger,
+    intervalMs: config.workspacePolling?.reconcileIntervalMs,
     workspaceGitService,
   });
   void (async () => {

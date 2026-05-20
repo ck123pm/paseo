@@ -63,6 +63,49 @@ describe("PersistedConfigSchema daemon relay config", () => {
   });
 });
 
+describe("PersistedConfigSchema daemon workspace polling config", () => {
+  test("accepts optional workspace polling intervals", () => {
+    const parsed = PersistedConfigSchema.parse({
+      daemon: {
+        workspaces: {
+          git: {
+            backgroundFetchIntervalMs: 900_000,
+            selfHealIntervalMs: 300_000,
+            workingTreeWatchFallbackRefreshMs: 60_000,
+          },
+          reconcileIntervalMs: 300_000,
+        },
+      },
+    });
+
+    expect(parsed.daemon?.workspaces).toEqual({
+      git: {
+        backgroundFetchIntervalMs: 900_000,
+        selfHealIntervalMs: 300_000,
+        workingTreeWatchFallbackRefreshMs: 60_000,
+      },
+      reconcileIntervalMs: 300_000,
+    });
+  });
+
+  test("rejects non-positive or non-integer workspace polling intervals", () => {
+    const result = PersistedConfigSchema.safeParse({
+      daemon: {
+        workspaces: {
+          git: {
+            backgroundFetchIntervalMs: 0,
+            selfHealIntervalMs: -1,
+            workingTreeWatchFallbackRefreshMs: 1.5,
+          },
+          reconcileIntervalMs: 0,
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
 describe("PersistedConfigSchema daemon append system prompt", () => {
   test("accepts optional append system prompt", () => {
     const parsed = PersistedConfigSchema.parse({

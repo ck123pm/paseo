@@ -9,7 +9,7 @@ import type {
 import type { WorkspaceGitService } from "./workspace-git-service.js";
 import { normalizeWorkspaceId } from "./workspace-registry-model.js";
 
-const DEFAULT_RECONCILE_INTERVAL_MS = 60_000;
+export const DEFAULT_RECONCILE_INTERVAL_MS = 300_000;
 
 function deriveWorkspaceKindFromMetadata(metadata: {
   projectKind: "git" | "directory";

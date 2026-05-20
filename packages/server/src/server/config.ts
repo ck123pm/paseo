@@ -23,6 +23,19 @@ import { mergeHostnames, parseHostnamesEnv, type HostnamesConfig } from "./hostn
 const DEFAULT_PORT = 6767;
 const DEFAULT_RELAY_ENDPOINT = "relay.paseo.sh:443";
 const DEFAULT_APP_BASE_URL = "https://app.paseo.sh";
+const DEFAULT_BACKGROUND_GIT_FETCH_INTERVAL_MS = 900_000;
+const DEFAULT_WORKSPACE_GIT_SELF_HEAL_INTERVAL_MS = 300_000;
+const DEFAULT_WORKING_TREE_WATCH_FALLBACK_REFRESH_MS = 60_000;
+const DEFAULT_WORKSPACE_RECONCILE_INTERVAL_MS = 300_000;
+
+export interface WorkspacePollingRuntimeConfig {
+  git: {
+    backgroundFetchIntervalMs: number;
+    selfHealIntervalMs: number;
+    workingTreeWatchFallbackRefreshMs: number;
+  };
+  reconcileIntervalMs: number;
+}
 
 function parseBooleanEnv(value: string | undefined): boolean | undefined {
   if (value === undefined) {
@@ -260,6 +273,26 @@ function resolveAppendSystemPrompt(persisted: ReturnType<typeof loadPersistedCon
   return persisted.daemon?.appendSystemPrompt ?? "";
 }
 
+function resolveWorkspacePollingConfig(
+  persisted: ReturnType<typeof loadPersistedConfig>,
+): WorkspacePollingRuntimeConfig {
+  return {
+    git: {
+      backgroundFetchIntervalMs:
+        persisted.daemon?.workspaces?.git?.backgroundFetchIntervalMs ??
+        DEFAULT_BACKGROUND_GIT_FETCH_INTERVAL_MS,
+      selfHealIntervalMs:
+        persisted.daemon?.workspaces?.git?.selfHealIntervalMs ??
+        DEFAULT_WORKSPACE_GIT_SELF_HEAL_INTERVAL_MS,
+      workingTreeWatchFallbackRefreshMs:
+        persisted.daemon?.workspaces?.git?.workingTreeWatchFallbackRefreshMs ??
+        DEFAULT_WORKING_TREE_WATCH_FALLBACK_REFRESH_MS,
+    },
+    reconcileIntervalMs:
+      persisted.daemon?.workspaces?.reconcileIntervalMs ?? DEFAULT_WORKSPACE_RECONCILE_INTERVAL_MS,
+  };
+}
+
 function resolveStaticLoadConfigSettings(
   env: NodeJS.ProcessEnv,
   cli: CliConfigOverrides | undefined,
@@ -317,6 +350,7 @@ export function loadConfig(
   const providerOverrides = extractProviderOverrides(
     persisted.agents?.providers as Record<string, unknown> | undefined,
   );
+  const workspacePolling = resolveWorkspacePollingConfig(persisted);
 
   return {
     listen,
@@ -339,6 +373,7 @@ export function loadConfig(
     relayPublicUseTls: relay.publicUseTls,
     appBaseUrl,
     auth: resolveAuthConfig(env, persisted),
+    workspacePolling,
     openai,
     speech,
     voiceLlmProvider: voiceLlm.provider,

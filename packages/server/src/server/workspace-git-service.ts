@@ -38,9 +38,9 @@ import {
 import { checkoutLiteFromGitSnapshot, normalizeWorkspaceId } from "./workspace-registry-model.js";
 
 const WORKSPACE_GIT_WATCH_DEBOUNCE_MS = 500;
-const BACKGROUND_GIT_FETCH_INTERVAL_MS = 180_000;
-export const WORKSPACE_GIT_SELF_HEAL_INTERVAL_MS = 60_000;
-const WORKING_TREE_WATCH_FALLBACK_REFRESH_MS = 5_000;
+export const DEFAULT_BACKGROUND_GIT_FETCH_INTERVAL_MS = 900_000;
+export const DEFAULT_WORKSPACE_GIT_SELF_HEAL_INTERVAL_MS = 300_000;
+export const DEFAULT_WORKING_TREE_WATCH_FALLBACK_REFRESH_MS = 60_000;
 // Auxiliary reads may reuse cached values within this window; snapshots do not expire on read.
 const WORKSPACE_GIT_AUXILIARY_READ_TTL_MS = 15_000;
 // Non-forced refresh triggers share this minimum gap to absorb watcher/self-heal bursts; force bypasses it.
@@ -250,7 +250,14 @@ interface WorkspaceGitServiceDependencies {
 interface WorkspaceGitServiceOptions {
   logger: pino.Logger;
   paseoHome: string;
+  polling?: Partial<WorkspaceGitPollingConfig>;
   deps?: Partial<WorkspaceGitServiceDependencies>;
+}
+
+export interface WorkspaceGitPollingConfig {
+  backgroundFetchIntervalMs: number;
+  selfHealIntervalMs: number;
+  workingTreeWatchFallbackRefreshMs: number;
 }
 
 interface WorkspaceGitTarget {
@@ -334,6 +341,7 @@ function resolveWorkspaceGitServiceDeps(
 export class WorkspaceGitServiceImpl implements WorkspaceGitService {
   private readonly logger: pino.Logger;
   private readonly paseoHome: string;
+  private readonly polling: WorkspaceGitPollingConfig;
   private readonly deps: WorkspaceGitServiceDependencies;
   private readonly snapshotUpdatedListeners = new Set<WorkspaceGitSnapshotUpdatedListener>();
   private readonly workspaceTargets = new Map<string, WorkspaceGitTarget>();
@@ -372,6 +380,15 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
   constructor(options: WorkspaceGitServiceOptions) {
     this.logger = options.logger.child({ module: "workspace-git-service" });
     this.paseoHome = options.paseoHome;
+    this.polling = {
+      backgroundFetchIntervalMs:
+        options.polling?.backgroundFetchIntervalMs ?? DEFAULT_BACKGROUND_GIT_FETCH_INTERVAL_MS,
+      selfHealIntervalMs:
+        options.polling?.selfHealIntervalMs ?? DEFAULT_WORKSPACE_GIT_SELF_HEAL_INTERVAL_MS,
+      workingTreeWatchFallbackRefreshMs:
+        options.polling?.workingTreeWatchFallbackRefreshMs ??
+        DEFAULT_WORKING_TREE_WATCH_FALLBACK_REFRESH_MS,
+    };
     this.deps = resolveWorkspaceGitServiceDeps(options.deps);
   }
 
@@ -910,11 +927,11 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
         for (const listener of target.listeners) {
           listener();
         }
-      }, WORKING_TREE_WATCH_FALLBACK_REFRESH_MS);
+      }, this.polling.workingTreeWatchFallbackRefreshMs);
       this.logger.warn(
         {
           cwd,
-          intervalMs: WORKING_TREE_WATCH_FALLBACK_REFRESH_MS,
+          intervalMs: this.polling.workingTreeWatchFallbackRefreshMs,
           reason:
             target.watchers.length === 0 ? "no_watchers" : "missing_recursive_repo_root_coverage",
         },
@@ -1012,7 +1029,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       workspaceKeys: new Set([workspaceTarget.cwd]),
       intervalId: setInterval(() => {
         void this.runRepoFetch(repoTarget);
-      }, BACKGROUND_GIT_FETCH_INTERVAL_MS),
+      }, this.polling.backgroundFetchIntervalMs),
       fetchInFlight: false,
     };
     this.repoTargets.set(repoGitRoot, repoTarget);
@@ -1064,7 +1081,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
             "Failed to run workspace git self-heal refresh",
           );
         });
-      }, WORKSPACE_GIT_SELF_HEAL_INTERVAL_MS);
+      }, this.polling.selfHealIntervalMs);
     }
 
     this.updateGitHubPollForTarget(target);

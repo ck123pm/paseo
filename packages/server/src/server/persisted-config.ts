@@ -12,6 +12,7 @@ import { ensurePrivateFile, writePrivateFileSync } from "./private-files.js";
 
 export const LogLevelSchema = z.enum(["trace", "debug", "info", "warn", "error", "fatal"]);
 export const LogFormatSchema = z.enum(["pretty", "json"]);
+const PositiveIntegerSchema = z.number().int().positive();
 
 const LogConfigSchema = z
   .object({
@@ -70,6 +71,21 @@ const BcryptHashSchema = z.string().regex(/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/
 const DaemonAuthSchema = z
   .object({
     password: BcryptHashSchema.optional(),
+  })
+  .strict();
+
+const DaemonWorkspaceGitConfigSchema = z
+  .object({
+    backgroundFetchIntervalMs: PositiveIntegerSchema.optional(),
+    selfHealIntervalMs: PositiveIntegerSchema.optional(),
+    workingTreeWatchFallbackRefreshMs: PositiveIntegerSchema.optional(),
+  })
+  .strict();
+
+const DaemonWorkspaceConfigSchema = z
+  .object({
+    git: DaemonWorkspaceGitConfigSchema.optional(),
+    reconcileIntervalMs: PositiveIntegerSchema.optional(),
   })
   .strict();
 
@@ -269,6 +285,7 @@ export const PersistedConfigSchema = z
           .strict()
           .optional(),
         auth: DaemonAuthSchema.optional(),
+        workspaces: DaemonWorkspaceConfigSchema.optional(),
       })
       .strict()
       .transform(({ allowedHosts, ...daemon }) => {
@@ -321,6 +338,14 @@ const DEFAULT_PERSISTED_CONFIG = PersistedConfigSchema.parse({
     },
     relay: {
       enabled: true,
+    },
+    workspaces: {
+      git: {
+        backgroundFetchIntervalMs: 900_000,
+        selfHealIntervalMs: 300_000,
+        workingTreeWatchFallbackRefreshMs: 60_000,
+      },
+      reconcileIntervalMs: 300_000,
     },
   },
   app: {

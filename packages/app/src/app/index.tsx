@@ -2,12 +2,8 @@ import React from "react";
 import { Redirect, usePathname } from "expo-router";
 import { StartupSplashScreen } from "@/screens/startup-splash-screen";
 import { useEarliestOnlineHostServerId, useHostRuntimeBootstrapState } from "@/app/_layout";
+import { resolveStartupRedirectRoute } from "@/app/host-runtime-bootstrap";
 import {
-  resolveStartupRedirectRoute,
-  resolveStartupWorkspaceSelection,
-} from "@/app/host-runtime-bootstrap";
-import {
-  navigateToWorkspace,
   useIsLastWorkspaceSelectionHydrated,
   useLastWorkspaceSelection,
 } from "@/stores/navigation-active-workspace-store";
@@ -29,26 +25,6 @@ export default function Index() {
     isWorkspaceSelectionLoaded,
     hasGivenUpWaitingForHost: bootstrapState.hasGivenUpWaitingForHost,
   });
-  const startupWorkspaceSelection = resolveStartupWorkspaceSelection({
-    pathname,
-    anyOnlineHostServerId,
-    workspaceSelection,
-    isWorkspaceSelectionLoaded,
-    hasGivenUpWaitingForHost: bootstrapState.hasGivenUpWaitingForHost,
-  });
-
-  React.useEffect(() => {
-    if (!startupWorkspaceSelection) {
-      return;
-    }
-    navigateToWorkspace(startupWorkspaceSelection.serverId, startupWorkspaceSelection.workspaceId, {
-      currentPathname: pathname,
-    });
-  }, [pathname, startupWorkspaceSelection]);
-
-  if (startupWorkspaceSelection) {
-    return <StartupSplashScreen bootstrapState={isDesktop ? bootstrapState : undefined} />;
-  }
 
   if (redirectRoute) {
     return <Redirect href={redirectRoute} />;
