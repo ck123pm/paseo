@@ -11,8 +11,11 @@ import {
 import { Folder } from "lucide-react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useQuery } from "@tanstack/react-query";
+import { getDesktopHost } from "@/desktop/host";
+import { pickDirectory } from "@/desktop/pick-directory";
 import { useKeyboardShortcutsStore } from "@/stores/keyboard-shortcuts-store";
 import { shortenPath } from "@/utils/shorten-path";
+import { isAbsolutePath } from "@/utils/path";
 import { useRecommendedProjectPaths } from "@/stores/session-store-hooks";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { useOpenProject } from "@/hooks/use-open-project";
@@ -74,6 +77,7 @@ export function ProjectPickerModal() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const openProject = useOpenProject(serverId);
+  const hasDialogBridge = typeof getDesktopHost()?.dialog?.open === "function";
 
   const directorySuggestionsQuery = useQuery({
     queryKey: ["project-picker-directory-suggestions", serverId, query],
@@ -134,6 +138,26 @@ export function ProjectPickerModal() {
     if (!trimmed) return;
     void handleSelectPath(trimmed);
   }, [handleSelectPath, query]);
+
+  const handlePickDirectory = useCallback(async () => {
+    if (!hasDialogBridge || isSubmitting) {
+      return;
+    }
+
+    try {
+      const path = await pickDirectory();
+      if (!path) {
+        return;
+      }
+      if (!isAbsolutePath(path)) {
+        throw new Error(`Directory picker must return an absolute path. Received: ${path}`);
+      }
+
+      await handleSelectPath(path);
+    } catch (error) {
+      console.error("[ProjectPickerModal] Failed to pick directory", error);
+    }
+  }, [handleSelectPath, hasDialogBridge, isSubmitting]);
 
   const handleChangeQuery = useCallback((text: string) => {
     setQuery(text);
@@ -231,20 +255,41 @@ export function ProjectPickerModal() {
 
         <View style={panelStyle}>
           <View style={headerStyle}>
-            <TextInput
-              ref={inputRef}
-              value={query}
-              onChangeText={handleChangeQuery}
-              placeholder="Type a directory path..."
-              placeholderTextColor={theme.colors.foregroundMuted}
-              style={inputStyle}
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoFocus
-              editable={!isSubmitting}
-              returnKeyType="go"
-              onSubmitEditing={handleSubmitCustom}
-            />
+            {hasDialogBridge ? (
+              <Pressable
+                onPress={() => void handlePickDirectory()}
+                disabled={isSubmitting}
+                style={({ pressed, hovered }) => [
+                  styles.bridgeButton,
+                  {
+                    backgroundColor:
+                      pressed || hovered ? theme.colors.surface1 : theme.colors.surface0,
+                    borderColor: theme.colors.border,
+                  },
+                  isSubmitting ? { opacity: 0.6 } : null,
+                ]}
+              >
+                <Folder size={16} strokeWidth={2.2} color={theme.colors.foregroundMuted} />
+                <Text style={[styles.bridgeButtonText, { color: theme.colors.foreground }]}>
+                  Select a local folder
+                </Text>
+              </Pressable>
+            ) : (
+              <TextInput
+                ref={inputRef}
+                value={query}
+                onChangeText={handleChangeQuery}
+                placeholder="Type a directory path..."
+                placeholderTextColor={theme.colors.foregroundMuted}
+                style={inputStyle}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoFocus
+                editable={!isSubmitting}
+                returnKeyType="go"
+                onSubmitEditing={handleSubmitCustom}
+              />
+            )}
           </View>
 
           <ScrollView
@@ -254,10 +299,10 @@ export function ProjectPickerModal() {
             showsVerticalScrollIndicator={false}
           >
             {isSubmitting ? <Text style={emptyTextStyle}>Opening project...</Text> : null}
-            {!isSubmitting && options.length === 0 && !query.trim() ? (
+            {!hasDialogBridge && !isSubmitting && options.length === 0 && !query.trim() ? (
               <Text style={emptyTextStyle}>Start typing a path</Text>
             ) : null}
-            {!isSubmitting && !(options.length === 0 && !query.trim()) ? (
+            {!hasDialogBridge && !isSubmitting && !(options.length === 0 && !query.trim()) ? (
               <>
                 {options.map((path, index) => (
                   <PathRow
@@ -300,6 +345,19 @@ const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.spacing[4],
     paddingVertical: theme.spacing[3],
     borderBottomWidth: 1,
+  },
+  bridgeButton: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: theme.spacing[3],
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+  },
+  bridgeButtonText: {
+    fontSize: theme.fontSize.base,
+    fontWeight: "500",
   },
   input: {
     fontSize: theme.fontSize.lg,

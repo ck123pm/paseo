@@ -68,6 +68,29 @@ paseo
 
 This shows a QR code in the terminal. Connect from any client. This path is useful for servers and remote machines.
 
+### Web app via npm
+
+If you want to hand the web client to someone as an npm package, publish `@getpaseo/web`.
+
+Run it directly without installing:
+
+```bash
+npx @getpaseo/web --open
+```
+
+Or install it globally:
+
+```bash
+npm install -g @getpaseo/web
+paseo-web --open
+```
+
+This package starts the built web app together with an embedded local daemon.
+
+When the `paseo-web` process exits, the embedded daemon is stopped too.
+
+Closing only the browser tab will not reliably stop the local launcher process.
+
 For full setup and configuration, see:
 
 - [Docs](https://paseo.sh/docs)
@@ -112,6 +135,7 @@ Quick monorepo package map:
 
 - `packages/server`: Paseo daemon (agent process orchestration, WebSocket API, MCP server)
 - `packages/app`: Expo client (iOS, Android, web)
+- `packages/web`: publishable local launcher for the built web client
 - `packages/cli`: `paseo` CLI for daemon and agent workflows
 - `packages/desktop`: Electron desktop app
 - `packages/relay`: Relay package for remote connectivity
@@ -131,6 +155,9 @@ npm run dev:website
 
 # build the daemon
 npm run build:daemon
+
+# build the publishable web launcher package
+npm run build:web:package
 
 # repo-wide checks
 npm run typecheck

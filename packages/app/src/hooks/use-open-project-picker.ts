@@ -1,6 +1,8 @@
 import { useCallback } from "react";
+import { getDesktopHost } from "@/desktop/host";
 import { pickDirectory } from "@/desktop/pick-directory";
 import { useKeyboardShortcutsStore } from "@/stores/keyboard-shortcuts-store";
+import { isAbsolutePath } from "@/utils/path";
 import { useIsLocalDaemon } from "./use-is-local-daemon";
 import { useOpenProject } from "./use-open-project";
 
@@ -15,7 +17,8 @@ export function useOpenProjectPicker(serverId: string | null): () => Promise<voi
       return;
     }
 
-    if (!isLocalDaemon) {
+    const hasDialogBridge = typeof getDesktopHost()?.dialog?.open === "function";
+    if (!isLocalDaemon && !hasDialogBridge) {
       setProjectPickerOpen(true);
       return;
     }
@@ -23,6 +26,9 @@ export function useOpenProjectPicker(serverId: string | null): () => Promise<voi
     const path = await pickDirectory();
     if (path === null) {
       return;
+    }
+    if (!isAbsolutePath(path)) {
+      throw new Error(`Directory picker must return an absolute path. Received: ${path}`);
     }
 
     await openProject(path);
