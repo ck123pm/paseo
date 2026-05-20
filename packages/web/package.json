@@ -1,6 +1,6 @@
 {
   "name": "@ck123pm/paseo-web",
-  "version": "0.1.83-beta.1",
+  "version": "0.1.83-beta.3",
   "description": "Paseo web app launcher for local distribution",
   "license": "AGPL-3.0-or-later",
   "bin": {
@@ -22,6 +22,6 @@
     "serve": "node ./bin/paseo-web.js"
   },
   "dependencies": {
-    "@ck123pm/paseo-server": "0.1.83-beta.1"
+    "@ck123pm/paseo-server": "0.1.83-beta.3"
   }
 }

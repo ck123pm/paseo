@@ -10,64 +10,18 @@ import {
   createPaseoDaemon,
   createRootLogger,
   loadConfig,
+  loadPersistedConfig,
   resolvePaseoHome,
 } from "@ck123pm/paseo-server";
+import {
+  buildDaemonLoadConfigOptions,
+  parseArgs,
+  resolveWebServerOptions,
+} from "./paseo-web-options.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
 const distDir = path.resolve(packageRoot, "dist");
-const defaultWebHost = "127.0.0.1";
-const defaultWebPort = 4173;
-const defaultDaemonListen = "127.0.0.1:6767";
-
-function parseArgs(argv) {
-  const options = {
-    webHost: defaultWebHost,
-    webPort: defaultWebPort,
-    daemonListen: defaultDaemonListen,
-    home: null,
-    open: false,
-    relay: false,
-  };
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if ((arg === "--host" || arg === "--web-host") && argv[index + 1]) {
-      options.webHost = argv[index + 1];
-      index += 1;
-      continue;
-    }
-    if ((arg === "--port" || arg === "--web-port") && argv[index + 1]) {
-      const port = Number.parseInt(argv[index + 1], 10);
-      if (!Number.isNaN(port)) options.webPort = port;
-      index += 1;
-      continue;
-    }
-    if (arg === "--daemon-listen" && argv[index + 1]) {
-      options.daemonListen = argv[index + 1];
-      index += 1;
-      continue;
-    }
-    if (arg === "--home" && argv[index + 1]) {
-      options.home = argv[index + 1];
-      index += 1;
-      continue;
-    }
-    if (arg === "--open") {
-      options.open = true;
-      continue;
-    }
-    if (arg === "--relay") {
-      options.relay = true;
-      continue;
-    }
-    if (arg === "--help" || arg === "-h") {
-      printHelp(0);
-    }
-  }
-
-  return options;
-}
 
 function printHelp(exitCode) {
   process.stdout.write(
@@ -252,20 +206,16 @@ if (!existsSync(distDir)) {
   process.exit(1);
 }
 
-const options = parseArgs(process.argv.slice(2));
+const parsedArgs = parseArgs(process.argv.slice(2));
+if (parsedArgs.kind === "help") {
+  printHelp(0);
+}
+const options = parsedArgs.options;
 const daemonHomeEnv = options.home ? { ...process.env, PASEO_HOME: options.home } : process.env;
 const paseoHome = resolvePaseoHome(daemonHomeEnv);
-const daemonConfig = loadConfig(paseoHome, {
-  env: {
-    ...daemonHomeEnv,
-    PASEO_LISTEN: options.daemonListen,
-    PASEO_RELAY_ENABLED: options.relay ? "true" : "false",
-  },
-  cli: {
-    listen: options.daemonListen,
-    relayEnabled: options.relay,
-  },
-});
+const persistedConfig = loadPersistedConfig(paseoHome);
+const { webHost, webPort } = resolveWebServerOptions(options, persistedConfig);
+const daemonConfig = loadConfig(paseoHome, buildDaemonLoadConfigOptions(options, daemonHomeEnv));
 const logger = createRootLogger(
   {
     log: {
@@ -381,8 +331,8 @@ webServer.once("error", (error) => {
   void cleanup(1);
 });
 
-webServer.listen(options.webPort, options.webHost, () => {
-  const webUrl = formatWebUrl(options.webHost, options.webPort);
+webServer.listen(webPort, webHost, () => {
+  const webUrl = formatWebUrl(webHost, webPort);
   process.stdout.write(`Paseo web running at ${webUrl}\n`);
   process.stdout.write(`Embedded daemon listening at ${daemonEndpoint}\n`);
   process.stdout.write("Stopping this process will also stop the embedded daemon.\n");

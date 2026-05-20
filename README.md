@@ -89,6 +89,47 @@ paseo-web --open
 
 This package starts the built web app together with an embedded local daemon.
 
+When `--host`, `--port`, or `--daemon-listen` are omitted, `paseo-web` reads
+the corresponding values from `$PASEO_HOME/config.json` and only falls back to
+its built-in defaults when the config file does not set them.
+
+Common optional settings in `$PASEO_HOME/config.json`:
+
+```json
+{
+  "version": 1,
+  "daemon": {
+    "listen": "0.0.0.0:6767",
+    "relay": {
+      "enabled": true
+    },
+    "workspaces": {
+      "git": {
+        "backgroundFetchIntervalMs": 900000,
+        "selfHealIntervalMs": 300000,
+        "workingTreeWatchFallbackRefreshMs": 60000
+      },
+      "reconcileIntervalMs": 300000
+    }
+  },
+  "app": {
+    "localWeb": {
+      "host": "127.0.0.1",
+      "port": 4173
+    }
+  }
+}
+```
+
+- `daemon.listen`: embedded daemon bind address. Use `127.0.0.1:6767` for same-machine only, or `0.0.0.0:6767` when older iOS or other LAN clients need direct TCP access.
+- `daemon.relay.enabled`: whether the embedded daemon should connect to relay when `--relay` is not passed.
+- `daemon.workspaces.git.backgroundFetchIntervalMs`: background git fetch cadence in milliseconds. Default `900000` (15 min).
+- `daemon.workspaces.git.selfHealIntervalMs`: cadence for workspace git self-heal checks. Default `300000` (5 min).
+- `daemon.workspaces.git.workingTreeWatchFallbackRefreshMs`: fallback refresh cadence when file watching is unavailable. Default `60000` (1 min).
+- `daemon.workspaces.reconcileIntervalMs`: workspace reconcile cadence. Default `300000` (5 min).
+- `app.localWeb.host` / `app.localWeb.port`: local HTTP bind address for the packaged web launcher when `--host` / `--port` are not passed.
+- `--home <path>`: read config and runtime state from a different `PASEO_HOME`.
+
 When the `paseo-web` process exits, the embedded daemon is stopped too.
 
 Closing only the browser tab will not reliably stop the local launcher process.

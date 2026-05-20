@@ -106,6 +106,36 @@ describe("PersistedConfigSchema daemon workspace polling config", () => {
   });
 });
 
+describe("PersistedConfigSchema app local web config", () => {
+  test("accepts optional local web host and port", () => {
+    const parsed = PersistedConfigSchema.parse({
+      app: {
+        localWeb: {
+          host: "0.0.0.0",
+          port: 4310,
+        },
+      },
+    });
+
+    expect(parsed.app?.localWeb).toEqual({
+      host: "0.0.0.0",
+      port: 4310,
+    });
+  });
+
+  test("rejects non-positive local web ports", () => {
+    const result = PersistedConfigSchema.safeParse({
+      app: {
+        localWeb: {
+          port: 0,
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
 describe("PersistedConfigSchema daemon append system prompt", () => {
   test("accepts optional append system prompt", () => {
     const parsed = PersistedConfigSchema.parse({

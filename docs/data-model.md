@@ -153,7 +153,11 @@ Single file, validated with `PersistedConfigSchema`.
     }
   },
   app: {
-    baseUrl: string
+    baseUrl: string,
+    localWeb: {
+      host: string,
+      port: number
+    }
   },
   providers: {
     openai: { apiKey: string },

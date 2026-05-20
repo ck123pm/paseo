@@ -147,6 +147,13 @@ const FeatureVoiceModeSchema = z
   })
   .strict();
 
+const AppLocalWebSchema = z
+  .object({
+    host: z.string().min(1).optional(),
+    port: PositiveIntegerSchema.optional(),
+  })
+  .strict();
+
 const BUILTIN_PROVIDER_IDS = ["claude", "codex", "copilot", "opencode", "pi"] as const;
 const PROVIDER_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 
@@ -297,6 +304,7 @@ export const PersistedConfigSchema = z
     app: z
       .object({
         baseUrl: z.string().optional(),
+        localWeb: AppLocalWebSchema.optional(),
       })
       .strict()
       .optional(),
@@ -350,6 +358,10 @@ const DEFAULT_PERSISTED_CONFIG = PersistedConfigSchema.parse({
   },
   app: {
     baseUrl: "https://app.paseo.sh",
+    localWeb: {
+      host: "127.0.0.1",
+      port: 4173,
+    },
   },
 }) as PersistedConfig;
 
