@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import { PARENT_AGENT_ID_LABEL, type AgentSnapshotPayload } from "@getpaseo/server";
+import { PARENT_AGENT_ID_LABEL, type AgentSnapshotPayload } from "@ck123pm/paseo-server";
 import { connectToDaemon, getDaemonHost } from "../../utils/client.js";
 import type { CommandOptions, ListResult, OutputSchema, CommandError } from "../../output/index.js";
 

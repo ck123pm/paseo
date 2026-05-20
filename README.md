@@ -72,6 +72,8 @@ This shows a QR code in the terminal. Connect from any client. This path is usef
 
 If you want to hand the web client to someone as an npm package, publish `@ck123pm/paseo-web`.
 
+Publish `@ck123pm/paseo-server` first. The web launcher depends on the server package at install time.
+
 Run it directly without installing:
 
 ```bash
@@ -90,6 +92,12 @@ This package starts the built web app together with an embedded local daemon.
 When the `paseo-web` process exits, the embedded daemon is stopped too.
 
 Closing only the browser tab will not reliably stop the local launcher process.
+
+Before publishing either package, verify the packed artifacts locally:
+
+```bash
+npm run smoke:web-package
+```
 
 For full setup and configuration, see:
 

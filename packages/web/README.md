@@ -2,6 +2,8 @@
 
 Install and run the packaged Paseo web app locally with an embedded daemon.
 
+Publish `@ck123pm/paseo-server` first. This launcher installs and imports the server package at runtime.
+
 ## Usage
 
 Run without installing:
@@ -31,3 +33,9 @@ This package starts both the web client and a local embedded daemon in the same 
 When the `paseo-web` process stops, the embedded daemon is stopped too.
 
 Closing only the browser tab does not reliably stop the launcher process.
+
+Before publishing, verify the packed artifacts locally from the repo root:
+
+```bash
+npm run smoke:web-package
+```

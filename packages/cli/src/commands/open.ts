@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { spawnProcess } from "@getpaseo/server";
+import { spawnProcess } from "@ck123pm/paseo-server";
 
 function findDesktopApp(): string | null {
   if (process.platform === "darwin") {

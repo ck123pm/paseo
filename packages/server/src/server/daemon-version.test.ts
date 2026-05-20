@@ -20,11 +20,11 @@ afterEach(() => {
 });
 
 describe("resolveDaemonVersion", () => {
-  it("resolves server version by walking up to @getpaseo/server package.json", () => {
+  it("resolves server version by walking up to @ck123pm/paseo-server package.json", () => {
     const root = createTempDir();
     writeFileSync(
       path.join(root, "package.json"),
-      JSON.stringify({ name: "@getpaseo/server", version: "9.8.7" }),
+      JSON.stringify({ name: "@ck123pm/paseo-server", version: "9.8.7" }),
       "utf8",
     );
     const nestedDir = path.join(root, "dist", "server");
@@ -34,11 +34,11 @@ describe("resolveDaemonVersion", () => {
     expect(resolveDaemonVersion(moduleUrl)).toBe("9.8.7");
   });
 
-  it("throws when @getpaseo/server package metadata cannot be resolved", () => {
+  it("throws when @ck123pm/paseo-server package metadata cannot be resolved", () => {
     const root = createTempDir();
     writeFileSync(
       path.join(root, "package.json"),
-      JSON.stringify({ name: "not-getpaseo-server", version: "1.2.3" }),
+      JSON.stringify({ name: "not-ck123pm-paseo-server", version: "1.2.3" }),
       "utf8",
     );
     const nestedDir = path.join(root, "dist", "server");
@@ -48,11 +48,11 @@ describe("resolveDaemonVersion", () => {
     expect(() => resolveDaemonVersion(moduleUrl)).toThrow(DaemonVersionResolutionError);
   });
 
-  it("throws when @getpaseo/server version is missing", () => {
+  it("throws when @ck123pm/paseo-server version is missing", () => {
     const root = createTempDir();
     writeFileSync(
       path.join(root, "package.json"),
-      JSON.stringify({ name: "@getpaseo/server" }),
+      JSON.stringify({ name: "@ck123pm/paseo-server" }),
       "utf8",
     );
     const nestedDir = path.join(root, "dist", "server");

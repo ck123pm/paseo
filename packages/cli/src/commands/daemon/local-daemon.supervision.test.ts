@@ -124,7 +124,7 @@ describe("local daemon launch supervision", () => {
     await vi.advanceTimersByTimeAsync(1200);
     const result = await resultPromise;
 
-    expect(result).toEqual({ pid: 4242, logPath: "/tmp/paseo-test/daemon.log" });
+    expect(result).toEqual({ pid: 4242, logPath: path.join("/tmp/paseo-test", "daemon.log") });
     expect(runtime.daemonProcess.wasUnreferenced).toBe(true);
     expect(runtime.recordedLaunches.map((launch) => launch.mode)).toEqual(["detached"]);
     const launch = runtime.recordedLaunches[0];

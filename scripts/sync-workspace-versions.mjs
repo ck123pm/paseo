@@ -27,7 +27,17 @@ const dependencySections = [
   "optionalDependencies",
 ];
 
-const touched = [];
+const pinnedWorkspaceDependencyRanges = new Map([
+  [
+    "@ck123pm/paseo-server",
+    new Map([
+      ["@getpaseo/highlight", "0.1.78"],
+      ["@getpaseo/relay", "0.1.78"],
+    ]),
+  ],
+]);
+
+const workspacePackages = [];
 
 for (const workspacePath of workspacePaths) {
   const packagePath = path.join(rootDir, workspacePath, "package.json");
@@ -35,6 +45,17 @@ for (const workspacePath of workspacePaths) {
     continue;
   }
 
+  const pkg = JSON.parse(readFileSync(packagePath, "utf8"));
+  if (typeof pkg.name === "string" && pkg.name.length > 0) {
+    workspacePackages.push({ name: pkg.name, packagePath });
+  }
+}
+
+const workspacePackageNames = new Set(workspacePackages.map((pkg) => pkg.name));
+
+const touched = [];
+
+for (const { packagePath } of workspacePackages) {
   const pkg = JSON.parse(readFileSync(packagePath, "utf8"));
   let changed = false;
 
@@ -58,6 +79,7 @@ for (const workspacePath of workspacePaths) {
   // resolves the local sibling, never a registry artifact. Publishable workspaces
   // get the root version so their published tarballs reference real npm versions.
   const internalDepRange = pkg.private === true ? "*" : rootVersion;
+  const pinnedDeps = pinnedWorkspaceDependencyRanges.get(pkg.name);
 
   for (const section of dependencySections) {
     const deps = pkg[section];
@@ -66,14 +88,15 @@ for (const workspacePath of workspacePaths) {
     }
 
     for (const name of Object.keys(deps)) {
-      if (!name.startsWith("@getpaseo/")) {
+      if (!workspacePackageNames.has(name)) {
         continue;
       }
       if (name === pkg.name) {
         continue;
       }
-      if (deps[name] !== internalDepRange) {
-        deps[name] = internalDepRange;
+      const targetRange = pinnedDeps?.get(name) ?? internalDepRange;
+      if (deps[name] !== targetRange) {
+        deps[name] = targetRange;
         changed = true;
       }
     }

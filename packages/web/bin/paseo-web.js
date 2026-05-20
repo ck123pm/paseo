@@ -11,7 +11,7 @@ import {
   createRootLogger,
   loadConfig,
   resolvePaseoHome,
-} from "@getpaseo/server";
+} from "@ck123pm/paseo-server";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
@@ -288,8 +288,7 @@ if (!daemonListenTarget || daemonListenTarget.type !== "tcp") {
     "Embedded Paseo web launcher requires a TCP daemon listen target such as 127.0.0.1:6767.",
   );
 }
-const daemonEndpoint =
-  `${daemonListenTarget.host}:${daemonListenTarget.port}`;
+const daemonEndpoint = `${daemonListenTarget.host}:${daemonListenTarget.port}`;
 
 const webServer = createServer(async (request, response) => {
   try {
@@ -301,8 +300,8 @@ const webServer = createServer(async (request, response) => {
         rawBody += typeof chunk === "string" ? chunk : chunk.toString("utf8");
       }
 
-      const options = rawBody ? JSON.parse(rawBody) : {};
-      if (!options || options.directory !== true || options.multiple === true) {
+      const dialogOptions = rawBody ? JSON.parse(rawBody) : {};
+      if (!dialogOptions || dialogOptions.directory !== true || dialogOptions.multiple === true) {
         response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
         response.end("Only single-directory selection is supported.");
         return;
@@ -333,7 +332,9 @@ const webServer = createServer(async (request, response) => {
 
     response.writeHead(200, {
       "Content-Type": contentType(filePath),
-      "Cache-Control": filePath.endsWith("index.html") ? "no-cache" : "public, max-age=31536000, immutable",
+      "Cache-Control": filePath.endsWith("index.html")
+        ? "no-cache"
+        : "public, max-age=31536000, immutable",
     });
     createReadStream(filePath).pipe(response);
   } catch (error) {

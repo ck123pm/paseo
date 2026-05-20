@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import type { AgentSnapshotPayload } from "@getpaseo/server";
+import type { AgentSnapshotPayload } from "@ck123pm/paseo-server";
 import { connectToDaemon, getDaemonHost } from "../../utils/client.js";
 import type { CommandOptions, ListResult, OutputSchema, CommandError } from "../../output/index.js";
 import { collectMultiple } from "../../utils/command-options.js";
@@ -161,8 +161,8 @@ export function buildAgentLsFetchOptions(
 
 /**
  * Agent ls command semantics:
- * - `paseo agent ls`    → active non-archived agents
- * - `paseo agent ls -a` → include archived agents
+ * - `paseo agent ls`    �?active non-archived agents
+ * - `paseo agent ls -a` �?include archived agents
  */
 export async function runLsCommand(
   options: AgentLsOptions,

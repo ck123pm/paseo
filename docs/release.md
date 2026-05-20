@@ -59,6 +59,16 @@ Use the beta path when you need to:
 - send a build to a user who is hitting a specific problem
 - iterate on `beta.1`, `beta.2`, `beta.3`, and so on before deciding to ship broadly
 
+### Pre-publish npm smoke test
+
+For the forked npm web/server release path, verify the packed tarballs locally before publishing any `beta` tag:
+
+```bash
+npm run smoke:web-package
+```
+
+This packs `@ck123pm/paseo-server` and `@ck123pm/paseo-web`, installs both tarballs into a temp directory, verifies the server package imports correctly, and checks that `paseo-web --help` starts from the installed artifact. Use `node scripts/smoke-web-package.mjs --keep-temp` if you need to inspect the temp install after a failure.
+
 ## Staged rollout (stable channel)
 
 Stable desktop releases go out via a linear time-based rollout: 0% admitted when the updater manifests appear, 100% admitted 36 hours later, linear ramp in between. Beta releases bypass the rollout entirely — beta users always receive updates immediately.

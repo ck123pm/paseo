@@ -64,7 +64,7 @@ render_flow_tree() {
 
 if [ ! -f "$SERVER_EXPORTS" ]; then
   echo "Missing server build artifact: $SERVER_EXPORTS" >&2
-  echo "Run: npm run build --workspace=@getpaseo/server" >&2
+  echo "Run: npm run build --workspace=@ck123pm/paseo-server" >&2
   exit 1
 fi
 

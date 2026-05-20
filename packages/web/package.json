@@ -1,15 +1,8 @@
 {
   "name": "@ck123pm/paseo-web",
-  "version": "0.1.78",
+  "version": "0.1.83-beta.1",
   "description": "Paseo web app launcher for local distribution",
   "license": "AGPL-3.0-or-later",
-  "type": "module",
-  "dependencies": {
-    "@getpaseo/server": "0.1.78"
-  },
-  "bundleDependencies": [
-    "@getpaseo/server"
-  ],
   "bin": {
     "paseo-web": "bin/paseo-web.js"
   },
@@ -18,6 +11,7 @@
     "dist",
     "README.md"
   ],
+  "type": "module",
   "publishConfig": {
     "access": "public"
   },
@@ -26,5 +20,8 @@
     "prepack": "npm run build",
     "start": "node ./bin/paseo-web.js",
     "serve": "node ./bin/paseo-web.js"
+  },
+  "dependencies": {
+    "@ck123pm/paseo-server": "0.1.83-beta.1"
   }
 }

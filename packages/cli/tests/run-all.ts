@@ -79,7 +79,7 @@ async function runCommand(label: string, command: string): Promise<void> {
   const result = await $`bash -lc ${command}`.nothrow();
   if (result.exitCode !== 0) {
     const error = result.stderr || result.stdout || `Exit code: ${result.exitCode}`;
-    console.error(`\n❌ ${label} failed`);
+    console.error(`\n�?${label} failed`);
     console.error(error);
     throw new Error(error);
   }
@@ -153,13 +153,13 @@ otherFiles.forEach((f, i) => {
 const testFiles = shardBuckets[shardIndex];
 
 if (allTestFiles.length === 0) {
-  console.log("❌ No test files found");
+  console.log("�?No test files found");
   await writeJsonSummary({ passed: 0, failed: 0, failures: [] });
   process.exit(1);
 }
 
 if (testFiles.length === 0) {
-  console.log(`❌ No test files for shard ${shardIndex + 1}/${shardTotal}`);
+  console.log(`�?No test files for shard ${shardIndex + 1}/${shardTotal}`);
   await writeJsonSummary({ passed: 0, failed: 0, failures: [] });
   process.exit(1);
 }
@@ -177,7 +177,7 @@ let failed = 0;
 const failures: Failure[] = [];
 
 await runCommand("Building relay", "npm run build --workspace=@getpaseo/relay");
-await runCommand("Building server", "npm run build --workspace=@getpaseo/server");
+await runCommand("Building server", "npm run build --workspace=@ck123pm/paseo-server");
 await runCommand("Building CLI", "npm run build --workspace=@getpaseo/cli");
 
 type TestOutcome =
@@ -257,12 +257,12 @@ function flushTestBlock(
   stdout: string,
   stderr: string,
 ): void {
-  const icon = success ? "✅" : "❌";
+  const icon = success ? "[PASS]" : "[FAIL]";
   const status = success ? "PASSED" : "FAILED";
   const lines: string[] = [];
-  lines.push("─".repeat(50));
-  lines.push(`📋 ${testName} (${formatDuration(durationMs)})`);
-  lines.push("─".repeat(50));
+  lines.push("-".repeat(50));
+  lines.push(`[TEST] ${testName} (${formatDuration(durationMs)})`);
+  lines.push("-".repeat(50));
   if (stdout) lines.push(stdout.trimEnd());
   if (!success && stderr) {
     lines.push("stderr:");
@@ -303,23 +303,23 @@ const totalDurationMs = Date.now() - totalStart;
 
 // Summary
 console.log("\n" + "=".repeat(50));
-console.log("📊 Test Results");
+console.log("[SUMMARY] Test Results");
 console.log("=".repeat(50));
-console.log(`  ✅ Passed: ${passed}`);
-console.log(`  ❌ Failed: ${failed}`);
-console.log(`  📝 Total:  ${passed + failed}`);
-console.log(`  ⏱  Wall:   ${formatDuration(totalDurationMs)} (concurrency=${concurrency})`);
+console.log(`  Passed: ${passed}`);
+console.log(`  Failed: ${failed}`);
+console.log(`  Total:  ${passed + failed}`);
+console.log(`  Wall:   ${formatDuration(totalDurationMs)} (concurrency=${concurrency})`);
 
 const slowest = [...timings].sort((a, b) => b.durationMs - a.durationMs).slice(0, 5);
 if (slowest.length > 0) {
-  console.log("\n🐢 Slowest tests:");
+  console.log("\n[DETAIL] Slowest tests:");
   for (const t of slowest) {
     console.log(`  - ${t.test} (${formatDuration(t.durationMs)})`);
   }
 }
 
 if (failures.length > 0) {
-  console.log("\n❌ Failed tests:");
+  console.log("\n[DETAIL] Failed tests:");
   for (const { test, error } of failures) {
     console.log(`  - ${test}`);
     if (error) {

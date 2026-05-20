@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Command } from "commander";
-import { isBearerTokenValid } from "@getpaseo/server";
+import { isBearerTokenValid } from "@ck123pm/paseo-server";
 import {
   runSetPasswordCommand,
   setDaemonPasswordInConfig,
@@ -60,7 +60,7 @@ try {
       isBearerTokenValid({ password: config.daemon.auth.password, token: "shared-secret" }),
       true,
     );
-    console.log("✓ set-password writes bcrypt hash without clobbering config\n");
+    console.log("�?set-password writes bcrypt hash without clobbering config\n");
   }
 
   {
@@ -79,7 +79,7 @@ try {
       isBearerTokenValid({ password: config.daemon.auth.password, token: "new-secret" }),
       true,
     );
-    console.log("✓ command accepts matching confirmation\n");
+    console.log("�?command accepts matching confirmation\n");
   }
 
   {
@@ -98,7 +98,7 @@ try {
         "code" in error &&
         error.code === "PASSWORD_MISMATCH",
     );
-    console.log("✓ command refuses password mismatch\n");
+    console.log("�?command refuses password mismatch\n");
   }
 } finally {
   await rm(root, { recursive: true, force: true });

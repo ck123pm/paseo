@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 import type { CommandOptions, ListResult, OutputSchema } from "../../output/index.js";
-import { AGENT_PROVIDER_DEFINITIONS, type ProviderSnapshotEntry } from "@getpaseo/server";
+import { AGENT_PROVIDER_DEFINITIONS, type ProviderSnapshotEntry } from "@ck123pm/paseo-server";
 import { tryConnectToDaemon } from "../../utils/client.js";
 
 export interface ProviderListItem {
@@ -12,7 +12,7 @@ export interface ProviderListItem {
   modes: string;
 }
 
-/** Derive provider list from the manifest — single source of truth */
+/** Derive provider list from the manifest �?single source of truth */
 const PROVIDERS: ProviderListItem[] = AGENT_PROVIDER_DEFINITIONS.map((def) => ({
   provider: def.id,
   label: def.label,

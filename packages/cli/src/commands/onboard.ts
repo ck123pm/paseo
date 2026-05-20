@@ -8,7 +8,7 @@ import {
   loadPersistedConfig,
   type CliConfigOverrides,
   type PersistedConfig,
-} from "@getpaseo/server";
+} from "@ck123pm/paseo-server";
 import {
   resolveLocalPaseoHome,
   resolveLocalDaemonState,

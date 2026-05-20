@@ -12,7 +12,7 @@ import type {
   AgentStreamMessage,
   AgentStreamEventPayload,
   AgentTimelineItem,
-} from "@getpaseo/server";
+} from "@ck123pm/paseo-server";
 
 export interface AgentAttachOptions {
   host?: string;

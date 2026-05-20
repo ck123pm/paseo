@@ -1,4 +1,4 @@
-import type { DaemonClient } from "@getpaseo/server";
+import type { DaemonClient } from "@ck123pm/paseo-server";
 import type { CommandError, CommandOptions } from "../../output/index.js";
 
 export interface WorktreeCreateOptions extends CommandOptions {
