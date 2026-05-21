@@ -27,7 +27,7 @@ const distDir = path.resolve(packageRoot, "dist");
 function printHelp(exitCode) {
   process.stdout.write(
     [
-      "Usage: paseo-web [--open] [--host 127.0.0.1] [--port 4173] [--home <path>]",
+      "Usage: paseo-web [--open] [--host 127.0.0.1] [--port 8081] [--home <path>]",
       "                 [--daemon-listen 127.0.0.1:6767] [--relay]",
       "",
       "Starts the packaged Paseo web app and an embedded local daemon.",
@@ -215,8 +215,12 @@ const options = parsedArgs.options;
 const daemonHomeEnv = options.home ? { ...process.env, PASEO_HOME: options.home } : process.env;
 const paseoHome = resolvePaseoHome(daemonHomeEnv);
 const persistedConfig = loadPersistedConfig(paseoHome);
-const { webHost, webPort } = resolveWebServerOptions(options, persistedConfig);
-const daemonConfig = loadConfig(paseoHome, buildDaemonLoadConfigOptions(options, daemonHomeEnv));
+const webServerOptions = resolveWebServerOptions(options, persistedConfig);
+const { webHost, webPort } = webServerOptions;
+const daemonConfig = loadConfig(
+  paseoHome,
+  buildDaemonLoadConfigOptions(options, daemonHomeEnv, webServerOptions),
+);
 const logger = createRootLogger(buildLauncherLogConfig(daemonConfig.log), { paseoHome });
 
 const daemon = await createPaseoDaemon(daemonConfig, logger);

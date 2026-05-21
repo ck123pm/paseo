@@ -115,7 +115,7 @@ Common optional settings in `$PASEO_HOME/config.json`:
   "app": {
     "localWeb": {
       "host": "127.0.0.1",
-      "port": 4173
+      "port": 8081
     }
   }
 }

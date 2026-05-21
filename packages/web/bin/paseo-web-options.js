@@ -1,5 +1,27 @@
 const defaultWebHost = "127.0.0.1";
-const defaultWebPort = 4173;
+const defaultWebPort = 8081;
+
+function dedupeOrigins(origins) {
+  return Array.from(new Set(origins.filter((origin) => origin.length > 0)));
+}
+
+function buildLocalWebAllowedOrigins(webHost, webPort) {
+  const origins = [];
+  const normalizedHost = webHost.trim().toLowerCase();
+
+  origins.push(`http://${webHost}:${webPort}`);
+
+  if (
+    normalizedHost === "127.0.0.1" ||
+    normalizedHost === "localhost" ||
+    normalizedHost === "0.0.0.0"
+  ) {
+    origins.push(`http://127.0.0.1:${webPort}`);
+    origins.push(`http://localhost:${webPort}`);
+  }
+
+  return dedupeOrigins(origins);
+}
 
 export function parseArgs(argv) {
   const options = {
@@ -50,10 +72,22 @@ export function parseArgs(argv) {
   return { kind: "run", options };
 }
 
-export function buildDaemonLoadConfigOptions(options, daemonHomeEnv) {
+export function buildDaemonLoadConfigOptions(options, daemonHomeEnv, webServerOptions) {
+  const webAllowedOrigins =
+    webServerOptions?.webHost && webServerOptions?.webPort
+      ? buildLocalWebAllowedOrigins(webServerOptions.webHost, webServerOptions.webPort)
+      : [];
+  const mergedCorsOrigins = dedupeOrigins([
+    ...(daemonHomeEnv.PASEO_CORS_ORIGINS
+      ? daemonHomeEnv.PASEO_CORS_ORIGINS.split(",").map((s) => s.trim())
+      : []),
+    ...webAllowedOrigins,
+  ]);
+
   return {
     env: {
       ...daemonHomeEnv,
+      ...(mergedCorsOrigins.length > 0 ? { PASEO_CORS_ORIGINS: mergedCorsOrigins.join(",") } : {}),
       ...(options.daemonListen ? { PASEO_LISTEN: options.daemonListen } : {}),
       ...(typeof options.relay === "boolean"
         ? { PASEO_RELAY_ENABLED: options.relay ? "true" : "false" }

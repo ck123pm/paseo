@@ -22,7 +22,7 @@ paseo-web --open
 Options:
 
 - `--host <host>`: bind host, overrides `app.localWeb.host` in `$PASEO_HOME/config.json` or falls back to `127.0.0.1`
-- `--port <port>`: bind port, overrides `app.localWeb.port` in `$PASEO_HOME/config.json` or falls back to `4173`
+- `--port <port>`: bind port, overrides `app.localWeb.port` in `$PASEO_HOME/config.json` or falls back to `8081`
 - `--daemon-listen <host:port>`: embedded daemon listen target, overrides `daemon.listen` in `$PASEO_HOME/config.json`
 - `--home <path>`: Paseo home directory
 - `--open`: open the browser automatically
@@ -56,7 +56,7 @@ launcher reads from `$PASEO_HOME/config.json` first:
   "app": {
     "localWeb": {
       "host": "127.0.0.1",
-      "port": 4173
+      "port": 8081
     }
   }
 }
