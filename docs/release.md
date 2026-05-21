@@ -53,6 +53,27 @@ npm run release:promote          # Promote X.Y.Z-beta.N to stable X.Y.Z
 - Beta releases use Electron's `beta` update channel. Users on the stable channel only receive stable releases; users on the beta channel receive beta releases and the final stable release when it is published.
 - **Do create a changelog entry for betas.** The beta entry is temporary and gets updated in place until promotion.
 
+## Forked `server/web` release path
+
+If this fork only publishes `@ck123pm/paseo-server` and `@ck123pm/paseo-web`, use the fork-only
+release commands instead of the shared monorepo versioning flow.
+
+```bash
+npm run release:fork:check         # smoke test packed server + web artifacts
+npm run version:fork:beta:next     # or version:fork:beta:patch / version:fork:patch / version:fork:promote
+npm run release:fork:publish       # publishes only @ck123pm/paseo-server and @ck123pm/paseo-web
+npm run release:push               # pushes HEAD and the vX.Y.Z tag
+```
+
+Rules for the fork path:
+
+- Only `package.json` versions for the repo root, `packages/server`, and `packages/web` are bumped.
+- Other workspace package versions stay unchanged.
+- Any in-repo workspace dependency on `@ck123pm/paseo-server` or `@ck123pm/paseo-web` is kept in
+  sync so local workspace installs still resolve correctly.
+- `release:fork:publish` automatically uses the `beta` dist-tag for prereleases and `latest` for
+  stable releases.
+
 Use the beta path when you need to:
 
 - test a build manually in a Linux or Windows VM

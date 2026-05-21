@@ -18,7 +18,7 @@ import {
   parseArgs,
   resolveWebServerOptions,
 } from "./paseo-web-options.js";
-import { buildLauncherLogConfig } from "./paseo-web-logging.js";
+import { buildLauncherLogConfig, buildLauncherStartupBanner } from "./paseo-web-logging.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
@@ -333,6 +333,12 @@ webServer.listen(webPort, webHost, () => {
       paseoHome,
     },
     "Paseo web launcher started",
+  );
+  process.stdout.write(
+    buildLauncherStartupBanner({
+      webUrl,
+      daemonEndpoint,
+    }) + "\n",
   );
   if (options.open) openBrowser(webUrl);
 });

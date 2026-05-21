@@ -125,7 +125,7 @@ export function getDesktopHost(): DesktopHostBridge | null {
 }
 
 export function isElectronRuntime(): boolean {
-  return getDesktopHost() !== null;
+  return typeof getDesktopHost()?.invoke === "function";
 }
 
 export function isElectronRuntimeMac(): boolean {
