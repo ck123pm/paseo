@@ -30,6 +30,9 @@ Options:
 
 This package starts both the web client and a local embedded daemon in the same launcher process.
 
+Launcher and embedded daemon logs are written to `$PASEO_HOME/daemon.log` by default instead of
+printing the startup banner to the terminal.
+
 If you do not pass `--host`, `--port`, `--daemon-listen`, or `--relay`, the
 launcher reads from `$PASEO_HOME/config.json` first:
 

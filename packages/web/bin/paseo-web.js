@@ -18,6 +18,7 @@ import {
   parseArgs,
   resolveWebServerOptions,
 } from "./paseo-web-options.js";
+import { buildLauncherLogConfig } from "./paseo-web-logging.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
@@ -216,17 +217,7 @@ const paseoHome = resolvePaseoHome(daemonHomeEnv);
 const persistedConfig = loadPersistedConfig(paseoHome);
 const { webHost, webPort } = resolveWebServerOptions(options, persistedConfig);
 const daemonConfig = loadConfig(paseoHome, buildDaemonLoadConfigOptions(options, daemonHomeEnv));
-const logger = createRootLogger(
-  {
-    log: {
-      console: {
-        level: "info",
-        format: "pretty",
-      },
-    },
-  },
-  { paseoHome, file: false },
-);
+const logger = createRootLogger(buildLauncherLogConfig(daemonConfig.log), { paseoHome });
 
 const daemon = await createPaseoDaemon(daemonConfig, logger);
 await daemon.start();
@@ -317,24 +308,31 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
 }
 
 process.on("uncaughtException", (error) => {
-  console.error(error);
+  logger.error({ err: error }, "Unhandled exception in paseo-web launcher");
   void cleanup(1);
 });
 
 process.on("unhandledRejection", (reason) => {
-  console.error(reason);
+  logger.error({ err: reason }, "Unhandled rejection in paseo-web launcher");
   void cleanup(1);
 });
 
 webServer.once("error", (error) => {
-  console.error(error);
+  logger.error({ err: error }, "Paseo web server failed");
   void cleanup(1);
 });
 
 webServer.listen(webPort, webHost, () => {
   const webUrl = formatWebUrl(webHost, webPort);
-  process.stdout.write(`Paseo web running at ${webUrl}\n`);
-  process.stdout.write(`Embedded daemon listening at ${daemonEndpoint}\n`);
-  process.stdout.write("Stopping this process will also stop the embedded daemon.\n");
+  logger.info(
+    {
+      webUrl,
+      webHost,
+      webPort,
+      daemonEndpoint,
+      paseoHome,
+    },
+    "Paseo web launcher started",
+  );
   if (options.open) openBrowser(webUrl);
 });
