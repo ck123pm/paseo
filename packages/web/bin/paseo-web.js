@@ -19,6 +19,11 @@ import {
   resolveWebServerOptions,
 } from "./paseo-web-options.js";
 import { buildLauncherLogConfig, buildLauncherStartupBanner } from "./paseo-web-logging.js";
+import {
+  closeHttpServer,
+  createShutdownController,
+  exitCodeForSignal,
+} from "./paseo-web-shutdown.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
@@ -289,41 +294,35 @@ const webServer = createServer(async (request, response) => {
   }
 });
 
-let cleanupStarted = false;
-
-async function cleanup(exitCode = 0) {
-  if (cleanupStarted) {
-    return;
-  }
-  cleanupStarted = true;
-
-  await new Promise((resolve) => {
-    webServer.close(() => resolve(undefined));
-  }).catch(() => undefined);
-
-  await daemon.stop().catch(() => undefined);
-  process.exit(exitCode);
-}
+const shutdown = createShutdownController({
+  closeWebServer: async () => closeHttpServer(webServer),
+  stopDaemon: async () => daemon.stop(),
+  exit: (exitCode) => process.exit(exitCode),
+  logger,
+});
 
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(signal, () => {
-    void cleanup(0);
+    shutdown.requestShutdown({
+      exitCode: exitCodeForSignal(signal),
+      reason: `signal:${signal}`,
+    });
   });
 }
 
 process.on("uncaughtException", (error) => {
   logger.error({ err: error }, "Unhandled exception in paseo-web launcher");
-  void cleanup(1);
+  shutdown.requestShutdown({ exitCode: 1, reason: "uncaughtException" });
 });
 
 process.on("unhandledRejection", (reason) => {
   logger.error({ err: reason }, "Unhandled rejection in paseo-web launcher");
-  void cleanup(1);
+  shutdown.requestShutdown({ exitCode: 1, reason: "unhandledRejection" });
 });
 
 webServer.once("error", (error) => {
   logger.error({ err: error }, "Paseo web server failed");
-  void cleanup(1);
+  shutdown.requestShutdown({ exitCode: 1, reason: "webServerError" });
 });
 
 webServer.listen(webPort, webHost, () => {
