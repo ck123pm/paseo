@@ -1,0 +1,71 @@
+packages/cli/src/commands/agent/inspect.ts
+  s_14818f3a664cab::t_0a93493c7643af 2-3
+packages/cli/src/commands/agent/stop.ts
+  s_14818f3a664cab::t_0a93493c7643af 2
+packages/cli/src/commands/permit/ls.ts
+  s_14818f3a664cab::t_0a93493c7643af 2-3
+packages/cli/src/utils/timeline.ts
+  s_14818f3a664cab::t_0a93493c7643af 1-2
+packages/cli/src/commands/agent/mode.ts
+  s_14818f3a664cab::t_0a93493c7643af 9
+packages/cli/src/utils/client.ts
+  s_14818f3a664cab::t_0a93493c7643af 2,9-11,13-14
+packages/cli/tests/run-all.ts
+  s_14818f3a664cab::t_0a93493c7643af 19,23,83,157,163,180-183,262,265-267,308,310-313,317,324
+packages/server/package.json
+  s_14818f3a664cab::t_0a93493c7643af 3,9,45,51-52,60-63,74,100,104
+packages/cli/src/commands/agent/archive.ts
+  s_14818f3a664cab::t_0a93493c7643af 2
+packages/cli/src/commands/provider/ls.ts
+  s_14818f3a664cab::t_0a93493c7643af 3-4,16
+packages/cli/src/commands/agent/ls.ts
+  s_14818f3a664cab::t_0a93493c7643af 2,164-165
+packages/cli/tests/e2e/relay-host.test.ts
+  s_14818f3a664cab::t_0a93493c7643af 7-10
+packages/cli/package.json
+  s_14818f3a664cab::t_0a93493c7643af 3,10-11,27,29-30,43
+packages/cli/src/commands/agent/attach.ts
+  s_14818f3a664cab::t_0a93493c7643af 10-12
+packages/cli/src/commands/worktree/create-input.ts
+  s_14818f3a664cab::t_0a93493c7643af 1
+package.json
+  s_14818f3a664cab::t_0a93493c7643af 3,27-28,40-41,48-55,57,79,97,101-102,134-136
+packages/cli/src/commands/agent/reload.ts
+  s_14818f3a664cab::t_0a93493c7643af 2
+packages/cli/src/commands/worktree/ls.ts
+  s_14818f3a664cab::t_0a93493c7643af 4
+packages/cli/src/commands/permit/allow.ts
+  s_14818f3a664cab::t_0a93493c7643af 2
+packages/web/package.json
+  s_14818f3a664cab::t_f305116ab1ff23 3,25
+packages/cli/src/commands/agent/delete.ts
+  s_14818f3a664cab::t_0a93493c7643af 2
+packages/cli/src/commands/agent/logs.ts
+  s_14818f3a664cab::t_0a93493c7643af 5-7
+packages/cli/src/commands/agent/run.ts
+  s_14818f3a664cab::t_0a93493c7643af 2-3,46-51,101,327-352,354-355,359-361,427-428,445,515
+packages/cli/src/commands/permit/deny.ts
+  s_14818f3a664cab::t_0a93493c7643af 2
+packages/cli/src/commands/worktree/archive.ts
+  s_14818f3a664cab::t_0a93493c7643af 3
+packages/cli/src/commands/worktree/create.ts
+  s_14818f3a664cab::t_0a93493c7643af 3
+packages/cli/src/commands/agent/import.ts
+  s_14818f3a664cab::t_0a93493c7643af 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10-trip",
+  "base_commit_sha": "d9d464381d45f72fc6d486d4ef84f63e9e0cec26",
+  "prompts": {},
+  "sessions": {
+    "s_14818f3a664cab": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e8ba5-793f-71b0-87d4-20b88c03deab",
+        "model": "gpt-5.5"
+      },
+      "human_author": "jianshuliu <530059628@qq.com>"
+    }
+  }
+}
