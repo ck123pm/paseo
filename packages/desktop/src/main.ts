@@ -10,7 +10,17 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { app, BrowserWindow, Menu, ipcMain, nativeImage, net, protocol, session } from "electron";
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  ipcMain,
+  nativeImage,
+  net,
+  protocol,
+  screen,
+  session,
+} from "electron";
 import { createDaemonCommandHandlers, registerDaemonManager } from "./daemon/daemon-manager.js";
 import { parsePassthroughCliArgsFromArgv, runPassthroughCli } from "./daemon/cli/passthrough.js";
 import { closeAllTransportSessions } from "./daemon/local-transport.js";
@@ -19,7 +29,9 @@ import {
   getMainWindowChromeOptions,
   getWindowBackgroundColor,
   resolveSystemWindowTheme,
+  resolveWindowBounds,
   setupWindowResizeEvents,
+  setupWindowStatePersistence,
   setupDefaultContextMenu,
   setupDragDropPrevention,
   buildStandardContextMenuItems,
@@ -41,6 +53,7 @@ import {
 } from "./features/browser-webviews.js";
 import { parseOpenProjectPathFromArgv } from "./open-project-routing.js";
 import { getDesktopSettingsStore } from "./settings/desktop-settings-electron.js";
+import { clampWindowStateToWorkAreas, createWindowStateStore } from "./settings/window-state.js";
 import {
   isDesktopManagedDaemonRunningSync,
   stopDesktopDaemonViaCli,
@@ -54,6 +67,8 @@ import { runDesktopStartup } from "./desktop-startup.js";
 const DEV_SERVER_URL = process.env.EXPO_DEV_URL ?? "http://localhost:8081";
 const APP_SCHEME = "paseo";
 const PASEO_DEBUG = process.env.PASEO_DEBUG === "1";
+const DISABLE_SINGLE_INSTANCE_LOCK = process.env.PASEO_DISABLE_SINGLE_INSTANCE_LOCK === "1";
+const APP_NAME = process.env.PASEO_TEST_APP_NAME?.trim() || "Paseo";
 
 function isAllowedBrowserWebviewUrl(value: string | undefined): boolean {
   if (!value) {
@@ -108,7 +123,7 @@ const FORWARDED_PASEO_SHORTCUT_KEYS = new Set([
 ]);
 const DESKTOP_SMOKE_ENV = "PASEO_DESKTOP_SMOKE";
 const DESKTOP_SMOKE_STOP_REQUEST = "paseo-smoke-stop";
-app.setName("Paseo");
+app.setName(APP_NAME);
 
 function getBrowserIdFromWebviewPartition(partition: string | undefined): string | null {
   const prefix = "persist:paseo-browser-";
@@ -370,15 +385,28 @@ function applyAppIcon(): void {
   app.dock?.setIcon(icon);
 }
 
+// Work areas with the primary display first, so window-state clamping treats
+// it as the fallback. getAllDisplays() order is not guaranteed to lead with it.
+function getWorkAreasPrimaryFirst(): Electron.Rectangle[] {
+  const primary = screen.getPrimaryDisplay();
+  const others = screen.getAllDisplays().filter((display) => display.id !== primary.id);
+  return [primary, ...others].map((display) => display.workArea);
+}
+
 async function createMainWindow(): Promise<void> {
   const iconPath = getWindowIconPath();
   const systemTheme = resolveSystemWindowTheme();
 
-  const title = devWorktreeName ? `Paseo (${devWorktreeName})` : "Paseo";
+  const windowStateStore = createWindowStateStore({ userDataPath: app.getPath("userData") });
+  const savedWindowState = await windowStateStore.load();
+  const restoredWindowState = savedWindowState
+    ? clampWindowStateToWorkAreas(savedWindowState, getWorkAreasPrimaryFirst())
+    : null;
+
+  const title = devWorktreeName ? `${APP_NAME} (${devWorktreeName})` : APP_NAME;
   const mainWindow = new BrowserWindow({
     title,
-    width: 1200,
-    height: 800,
+    ...resolveWindowBounds(restoredWindowState),
     show: false,
     backgroundColor: getWindowBackgroundColor(systemTheme),
     ...(iconPath ? { icon: iconPath } : {}),
@@ -398,8 +426,13 @@ async function createMainWindow(): Promise<void> {
     app.dock?.setBadge(devWorktreeName);
   }
 
+  if (restoredWindowState?.isMaximized) {
+    mainWindow.maximize();
+  }
+
   setupDarwinCompositorWatchdog(mainWindow);
   setupWindowResizeEvents(mainWindow);
+  setupWindowStatePersistence(mainWindow, windowStateStore);
   setupDefaultContextMenu(mainWindow);
   setupDragDropPrevention(mainWindow);
   mainWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
@@ -522,6 +555,11 @@ function sendOpenProjectEvent(win: BrowserWindow, projectPath: string): void {
 // ---------------------------------------------------------------------------
 
 function setupSingleInstanceLock(): boolean {
+  if (DISABLE_SINGLE_INSTANCE_LOCK) {
+    log.info("[single-instance] disabled by PASEO_DISABLE_SINGLE_INSTANCE_LOCK");
+    return true;
+  }
+
   const gotLock = app.requestSingleInstanceLock();
   if (!gotLock) {
     app.quit();

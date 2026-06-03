@@ -10,6 +10,7 @@ import {
   mkdirSync,
 } from "fs";
 import { join } from "path";
+import { win32 } from "node:path";
 import { tmpdir } from "os";
 import {
   __resetCheckoutShortstatCacheForTests,
@@ -17,6 +18,7 @@ import {
   __setPullRequestStatusCacheTtlForTests,
   commitAll,
   getCachedCheckoutShortstat,
+  getCheckoutSnapshotFacts,
   getCurrentBranch,
   getCheckoutDiff,
   getCheckoutShortstat,
@@ -39,6 +41,7 @@ import {
   isDescendantPath,
   warmCheckoutShortstatInBackground,
 } from "./checkout-git.js";
+import { startGitCommandMetrics, stopGitCommandMetrics } from "./run-git-command.js";
 import {
   GitHubCommandError,
   GitHubCliMissingError,
@@ -329,6 +332,48 @@ describe("checkout git utilities", () => {
     expect(message).toBe("update file");
   });
 
+  it("reuses checkout snapshot facts across status, shortstat, and PR status reads", async () => {
+    setupRemoteTrackingMain(repoDir, tempDir);
+    execFileSync("git", ["checkout", "-b", "feature/facts"], { cwd: repoDir });
+    commitFile(repoDir, "feature.txt", "feature\n", "feature");
+    writeFileSync(join(repoDir, "feature.txt"), "feature\nchanged\n");
+    const github = createGitHubServiceForStatus(createPullRequestStatus());
+
+    const facts = await getCheckoutSnapshotFacts(repoDir, { paseoHome });
+    const status = await getCheckoutStatus(repoDir, { paseoHome, facts });
+    const shortstat = await getCheckoutShortstat(repoDir, { paseoHome, facts }, { force: true });
+    const prStatus = await getPullRequestStatus(
+      repoDir,
+      github,
+      { force: true, reason: "snapshot-equivalence" },
+      { paseoHome, facts },
+    );
+
+    __resetCheckoutShortstatCacheForTests();
+    __resetPullRequestStatusCacheForTests();
+    startGitCommandMetrics();
+    const statusWithFacts = await getCheckoutStatus(repoDir, { paseoHome, facts });
+    const shortstatWithFacts = await getCheckoutShortstat(
+      repoDir,
+      { paseoHome, facts },
+      { force: true },
+    );
+    const prStatusWithFacts = await getPullRequestStatus(
+      repoDir,
+      github,
+      { force: true, reason: "snapshot-equivalence-with-facts" },
+      { paseoHome, facts },
+    );
+    const metrics = stopGitCommandMetrics();
+    const commands = metrics.commands.map((command) => command.args.join(" "));
+
+    expect(statusWithFacts).toEqual(status);
+    expect(shortstatWithFacts).toEqual(shortstat);
+    expect(prStatusWithFacts).toEqual(prStatus);
+    expect(commands).not.toContain("rev-parse --show-toplevel");
+    expect(commands).not.toContain("rev-parse --abbrev-ref HEAD");
+  });
+
   it("hides whitespace-only changes when requested", async () => {
     writeFileSync(join(repoDir, "file.txt"), "hello  \n");
 
@@ -491,6 +536,53 @@ const x = 1;
       return;
     }
     expect(status.aheadOfOrigin).toBeNull();
+  });
+
+  it("does not report full history as unpushed for fresh no-track Paseo worktrees", async () => {
+    setupRemoteTrackingMain(repoDir, tempDir);
+    commitFile(repoDir, "second.txt", "second\n", "second commit");
+    execFileSync("git", ["push"], { cwd: repoDir });
+
+    const worktree = await createLegacyWorktreeForTest({
+      branchName: "fresh-feature",
+      cwd: repoDir,
+      baseBranch: "main",
+      worktreeSlug: "fresh-feature",
+      paseoHome,
+    });
+
+    const status = await getCheckoutStatus(worktree.worktreePath, { paseoHome });
+    expect(status).toMatchObject({
+      isGit: true,
+      isPaseoOwnedWorktree: true,
+      baseRef: "main",
+      aheadBehind: { ahead: 0, behind: 0 },
+      aheadOfOrigin: 0,
+    });
+  });
+
+  it("reports local-only worktree commits as unpushed relative to base", async () => {
+    setupRemoteTrackingMain(repoDir, tempDir);
+    commitFile(repoDir, "second.txt", "second\n", "second commit");
+    execFileSync("git", ["push"], { cwd: repoDir });
+
+    const worktree = await createLegacyWorktreeForTest({
+      branchName: "fresh-feature",
+      cwd: repoDir,
+      baseBranch: "main",
+      worktreeSlug: "fresh-feature",
+      paseoHome,
+    });
+    commitFile(worktree.worktreePath, "feature.txt", "feature\n", "feature commit");
+
+    const status = await getCheckoutStatus(worktree.worktreePath, { paseoHome });
+    expect(status).toMatchObject({
+      isGit: true,
+      isPaseoOwnedWorktree: true,
+      baseRef: "main",
+      aheadBehind: { ahead: 1, behind: 0 },
+      aheadOfOrigin: 1,
+    });
   });
 
   it("does not report incoming additions when the base branch is behind its remote", async () => {
@@ -920,6 +1012,27 @@ const x = 1;
     expect(diff.structured?.some((f) => f.path === "file.txt" && f.status === "too_large")).toBe(
       true,
     );
+  });
+
+  it("marks tracked generated one-line diffs as too_large by content size", async () => {
+    writeFileSync(join(repoDir, "generated.js"), `const data = "old";\n`);
+    execFileSync("git", ["add", "generated.js"], { cwd: repoDir });
+    execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "add generated"], {
+      cwd: repoDir,
+    });
+
+    writeFileSync(join(repoDir, "generated.js"), `const data = "${"x".repeat(1_100_000)}";\n`);
+
+    const diff = await getCheckoutDiff(repoDir, { mode: "uncommitted", includeStructured: true });
+    const entry = diff.structured?.find((file) => file.path === "generated.js");
+
+    expect(entry).toBeTruthy();
+    expect(entry?.status).toBe("too_large");
+    expect(entry?.additions).toBe(1);
+    expect(entry?.deletions).toBe(1);
+    expect(entry?.hunks).toEqual([]);
+    expect(diff.diff).toContain("# generated.js: diff too large omitted");
+    expect(diff.diff).not.toContain("x".repeat(10_000));
   });
 
   it("short-circuits tracked binary files", async () => {
@@ -2241,6 +2354,20 @@ const x = 1;
 
     it("matches Windows .paseo\\worktrees\\ paths", () => {
       expect(isPaseoWorktreePath("C:\\Users\\dev\\.paseo\\worktrees\\feature")).toBe(true);
+    });
+
+    it("matches worktrees under a custom PASEO_HOME", () => {
+      const customPaseoHome = process.platform === "win32" ? "C:\\paseo" : "/var/lib/paseo";
+      const worktreePath =
+        process.platform === "win32"
+          ? win32.join(customPaseoHome, "worktrees", "project", "feature")
+          : `${customPaseoHome}/worktrees/project/feature`;
+
+      expect(
+        isPaseoWorktreePath(worktreePath, {
+          paseoHome: customPaseoHome,
+        }),
+      ).toBe(true);
     });
 
     it("rejects paths without .paseo/worktrees segment", () => {

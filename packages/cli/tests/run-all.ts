@@ -16,10 +16,11 @@ import { join, dirname, delimiter } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(__dirname, "..", "..", "..");
 
 // npm workspace scripts only add the local node_modules/.bin to PATH; hoisted
 // packages live in the root. Prepend it so `npx paseo` resolves locally.
-const rootNodeModulesBin = join(__dirname, "..", "..", "..", "node_modules", ".bin");
+const rootNodeModulesBin = join(repoRoot, "node_modules", ".bin");
 const args = process.argv.slice(2);
 const testEnvDefaults = {
   PASEO_LOCAL_SPEECH_AUTO_DOWNLOAD: process.env.PASEO_LOCAL_SPEECH_AUTO_DOWNLOAD ?? "0",
@@ -79,7 +80,7 @@ async function runCommand(label: string, command: string): Promise<void> {
   const result = await $`bash -lc ${command}`.nothrow();
   if (result.exitCode !== 0) {
     const error = result.stderr || result.stdout || `Exit code: ${result.exitCode}`;
-    console.error(`\n�?${label} failed`);
+    console.error(`\n❌ ${label} failed`);
     console.error(error);
     throw new Error(error);
   }
@@ -153,13 +154,13 @@ otherFiles.forEach((f, i) => {
 const testFiles = shardBuckets[shardIndex];
 
 if (allTestFiles.length === 0) {
-  console.log("�?No test files found");
+  console.log("❌ No test files found");
   await writeJsonSummary({ passed: 0, failed: 0, failures: [] });
   process.exit(1);
 }
 
 if (testFiles.length === 0) {
-  console.log(`�?No test files for shard ${shardIndex + 1}/${shardTotal}`);
+  console.log(`❌ No test files for shard ${shardIndex + 1}/${shardTotal}`);
   await writeJsonSummary({ passed: 0, failed: 0, failures: [] });
   process.exit(1);
 }
@@ -176,9 +177,10 @@ let passed = 0;
 let failed = 0;
 const failures: Failure[] = [];
 
-await runCommand("Building relay", "npm run build --workspace=@getpaseo/relay");
-await runCommand("Building server", "npm run build --workspace=@ck123pm/paseo-server");
-await runCommand("Building CLI", "npm run build --workspace=@getpaseo/cli");
+await runCommand(
+  "Building server stack",
+  `npm --prefix ${JSON.stringify(repoRoot)} run build:server`,
+);
 
 type TestOutcome =
   | { status: "passed"; durationMs: number }
@@ -257,12 +259,12 @@ function flushTestBlock(
   stdout: string,
   stderr: string,
 ): void {
-  const icon = success ? "[PASS]" : "[FAIL]";
+  const icon = success ? "✅" : "❌";
   const status = success ? "PASSED" : "FAILED";
   const lines: string[] = [];
-  lines.push("-".repeat(50));
-  lines.push(`[TEST] ${testName} (${formatDuration(durationMs)})`);
-  lines.push("-".repeat(50));
+  lines.push("─".repeat(50));
+  lines.push(`📋 ${testName} (${formatDuration(durationMs)})`);
+  lines.push("─".repeat(50));
   if (stdout) lines.push(stdout.trimEnd());
   if (!success && stderr) {
     lines.push("stderr:");
@@ -303,23 +305,23 @@ const totalDurationMs = Date.now() - totalStart;
 
 // Summary
 console.log("\n" + "=".repeat(50));
-console.log("[SUMMARY] Test Results");
+console.log("📊 Test Results");
 console.log("=".repeat(50));
-console.log(`  Passed: ${passed}`);
-console.log(`  Failed: ${failed}`);
-console.log(`  Total:  ${passed + failed}`);
-console.log(`  Wall:   ${formatDuration(totalDurationMs)} (concurrency=${concurrency})`);
+console.log(`  ✅ Passed: ${passed}`);
+console.log(`  ❌ Failed: ${failed}`);
+console.log(`  📝 Total:  ${passed + failed}`);
+console.log(`  ⏱  Wall:   ${formatDuration(totalDurationMs)} (concurrency=${concurrency})`);
 
 const slowest = [...timings].sort((a, b) => b.durationMs - a.durationMs).slice(0, 5);
 if (slowest.length > 0) {
-  console.log("\n[DETAIL] Slowest tests:");
+  console.log("\n🐢 Slowest tests:");
   for (const t of slowest) {
     console.log(`  - ${t.test} (${formatDuration(t.durationMs)})`);
   }
 }
 
 if (failures.length > 0) {
-  console.log("\n[DETAIL] Failed tests:");
+  console.log("\n❌ Failed tests:");
   for (const { test, error } of failures) {
     console.log(`  - ${test}`);
     if (error) {

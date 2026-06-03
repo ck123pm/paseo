@@ -3,7 +3,6 @@ import type { Logger } from "pino";
 import type { AgentManager } from "../agent/agent-manager.js";
 import type { AgentStorage } from "../agent/agent-storage.js";
 import type { DaemonConfigStore } from "../daemon-config-store.js";
-import type { SessionOutboundMessage } from "../messages.js";
 import { archivePaseoWorktree, killTerminalsUnderPath } from "../paseo-worktree-archive-service.js";
 import { isSameOrDescendantPath } from "../path-utils.js";
 import type {
@@ -16,6 +15,7 @@ import { isPaseoOwnedWorktreeCwd } from "../../utils/worktree.js";
 
 export interface AutoArchiveArchiveOptions {
   paseoHome: string;
+  worktreesRoot?: string;
   daemonConfigStore: DaemonConfigStore;
   workspaceGitService: WorkspaceGitServiceImpl;
   github: GitHubService;
@@ -26,7 +26,6 @@ export interface AutoArchiveArchiveOptions {
   markWorkspaceArchiving: (workspaceIds: Iterable<string>, archivingAt: string) => void;
   clearWorkspaceArchiving: (workspaceIds: Iterable<string>) => void;
   emitWorkspaceUpdatesForWorkspaceIds: (workspaceIds: Iterable<string>) => Promise<void>;
-  emitSessionMessage: (message: SessionOutboundMessage) => void;
 }
 
 export interface ArchiveIfSafeDependencies {
@@ -83,7 +82,10 @@ export async function archiveIfSafe(input: {
       return;
     }
 
-    const ownership = await deps.isPaseoOwnedWorktreeCwd(cwd, { paseoHome: options.paseoHome });
+    const ownership = await deps.isPaseoOwnedWorktreeCwd(cwd, {
+      paseoHome: options.paseoHome,
+      worktreesRoot: options.worktreesRoot,
+    });
     if (!ownership.allowed) {
       return;
     }
@@ -92,12 +94,12 @@ export async function archiveIfSafe(input: {
       await deps.archivePaseoWorktree(
         {
           paseoHome: options.paseoHome,
+          worktreesRoot: options.worktreesRoot,
           github: options.github,
           workspaceGitService: options.workspaceGitService,
           agentManager: options.agentManager,
           agentStorage: options.agentStorage,
           archiveWorkspaceRecord: options.archiveWorkspaceRecord,
-          emit: options.emitSessionMessage,
           emitWorkspaceUpdatesForWorkspaceIds: options.emitWorkspaceUpdatesForWorkspaceIds,
           markWorkspaceArchiving: options.markWorkspaceArchiving,
           clearWorkspaceArchiving: options.clearWorkspaceArchiving,
@@ -118,6 +120,7 @@ export async function archiveIfSafe(input: {
           targetPath: cwd,
           repoRoot: ownership.repoRoot ?? null,
           worktreesRoot: ownership.worktreeRoot,
+          worktreesBaseRoot: options.worktreesRoot,
           requestId: "auto-archive-on-merge",
         },
       );

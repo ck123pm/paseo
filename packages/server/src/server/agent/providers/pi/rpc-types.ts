@@ -31,8 +31,16 @@ export type PiAgentMessage =
       content: string | Array<PiTextContent | PiImageContent>;
     }
   | {
+      role: "custom";
+      content: string | Array<PiTextContent | PiImageContent>;
+    }
+  | {
       role: "assistant";
       content: PiAssistantContent[];
+      provider?: string;
+      model?: string;
+      responseId?: string;
+      responseModel?: string;
       errorMessage?: string | null;
       stopReason?: string;
     }
@@ -129,6 +137,8 @@ export type PiAssistantMessageEvent =
 export type PiAgentSessionEvent =
   | { type: "agent_start" }
   | { type: "turn_start" }
+  | { type: "message_start"; message: PiAgentMessage }
+  | { type: "message_end"; message: PiAgentMessage }
   | {
       type: "message_update";
       message: PiAgentMessage;

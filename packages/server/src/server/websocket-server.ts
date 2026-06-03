@@ -13,7 +13,6 @@ import type { LoopService } from "./loop-service.js";
 import type { ScheduleService } from "./schedule/service.js";
 import type { CheckoutDiffManager, CheckoutDiffMetrics } from "./checkout-diff-manager.js";
 import type { DaemonConfigStore, MutableDaemonConfig } from "./daemon-config-store.js";
-import { applyMutableProviderConfigToOverrides } from "./daemon-config-store.js";
 import {
   type ServerInfoStatusPayload,
   type WorkspaceSetupSnapshot,
@@ -25,23 +24,18 @@ import {
   type WSOutboundMessage,
   wrapSessionMessage,
 } from "./messages.js";
-import { asUint8Array, decodeTerminalStreamFrame } from "../shared/binary-frames/index.js";
+import { asUint8Array, decodeTerminalStreamFrame } from "@getpaseo/protocol/binary-frames/index";
 import type { HostnamesConfig } from "./hostnames.js";
 import { isHostnameAllowed } from "./hostnames.js";
 import { Session, type SessionLifecycleIntent, type SessionRuntimeMetrics } from "./session.js";
 import type { AgentProvider } from "./agent/agent-sdk-types.js";
-import type {
-  AgentProviderRuntimeSettingsMap,
-  ProviderOverride,
-} from "./agent/provider-launch-config.js";
 import { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";
-import { buildProviderRegistry, createClientsFromRegistry } from "./agent/provider-registry.js";
 import type { WorkspaceGitRuntimeSnapshot, WorkspaceGitService } from "./workspace-git-service.js";
 import { buildWorkspaceGitMetadataFromSnapshot } from "./workspace-git-metadata.js";
 import { PushTokenStore } from "./push/token-store.js";
 import { createPushNotificationSender, type PushNotificationSender } from "./push/notifications.js";
 import type { ScriptHealthState } from "./script-health-monitor.js";
-import type { ScriptRouteStore } from "./script-proxy.js";
+import type { ServiceProxySubsystem } from "./service-proxy.js";
 import type { WorkspaceScriptRuntimeStore } from "./workspace-script-runtime-store.js";
 import type { SpeechReadinessSnapshot, SpeechService } from "./speech/speech-runtime.js";
 import type { VoiceCallerContext, VoiceSpeakHandler } from "./voice-types.js";
@@ -49,7 +43,7 @@ import { computeNotificationPlan, type ClientPresenceState } from "./agent-atten
 import {
   buildAgentAttentionNotificationPayload,
   findLatestPermissionRequest,
-} from "../shared/agent-attention-notification.js";
+} from "@getpaseo/protocol/agent-attention-notification";
 import { createGitHubService, type GitHubService } from "../services/github-service.js";
 import {
   extractWsBearerProtocol,
@@ -356,16 +350,18 @@ export class VoiceAssistantWebSocketServer {
   private readonly workspaceGitService: WorkspaceGitService;
   private readonly downloadTokenStore: DownloadTokenStore;
   private readonly paseoHome: string;
+  private readonly worktreesRoot: string | undefined;
   private readonly daemonConfigStore: DaemonConfigStore;
   private readonly pushTokenStore: PushTokenStore;
   private readonly pushNotificationSender: PushNotificationSender;
   private readonly mcpBaseUrl: string | null;
   private speech!: SpeechService | null;
   private terminalManager!: TerminalManager | null;
-  private scriptRouteStore!: ScriptRouteStore | null;
+  private serviceProxy!: ServiceProxySubsystem | null;
   private scriptRuntimeStore!: WorkspaceScriptRuntimeStore | null;
   private getDaemonTcpPort!: (() => number | null) | null;
   private getDaemonTcpHost!: (() => string | null) | null;
+  private serviceProxyPublicBaseUrl!: string | null;
   private resolveScriptHealth!: ((hostname: string) => ScriptHealthState | null) | null;
   private dictation!: {
     finalTimeoutMs?: number;
@@ -373,9 +369,6 @@ export class VoiceAssistantWebSocketServer {
   private readonly voiceSpeakHandlers = new Map<string, VoiceSpeakHandler>();
   private readonly voiceCallerContexts = new Map<string, VoiceCallerContext>();
   private readonly workspaceSetupSnapshots = new Map<string, WorkspaceSetupSnapshot>();
-  private agentProviderRuntimeSettings: AgentProviderRuntimeSettingsMap | undefined;
-  private providerOverrides: Record<string, ProviderOverride> | undefined;
-  private isDev!: boolean;
   private readonly providerSnapshotManager: ProviderSnapshotManager;
   private onLifecycleIntent!: ((intent: SessionLifecycleIntent) => void) | null;
   private onBranchChanged!:
@@ -404,9 +397,6 @@ export class VoiceAssistantWebSocketServer {
     dictation?: {
       finalTimeoutMs?: number;
     },
-    agentProviderRuntimeSettings?: AgentProviderRuntimeSettingsMap,
-    providerOverrides?: Record<string, ProviderOverride>,
-    isDev?: boolean,
     daemonVersion?: string,
     onLifecycleIntent?: (intent: SessionLifecycleIntent) => void,
     projectRegistry?: ProjectRegistry,
@@ -415,7 +405,7 @@ export class VoiceAssistantWebSocketServer {
     loopService?: LoopService,
     scheduleService?: ScheduleService,
     checkoutDiffManager?: CheckoutDiffManager,
-    scriptRouteStore?: ScriptRouteStore | null,
+    serviceProxy?: ServiceProxySubsystem | null,
     scriptRuntimeStore?: WorkspaceScriptRuntimeStore | null,
     onBranchChanged?: (
       workspaceId: string,
@@ -428,8 +418,10 @@ export class VoiceAssistantWebSocketServer {
     workspaceGitService?: WorkspaceGitService,
     github?: GitHubService,
     pushNotificationSender?: PushNotificationSender,
+    providerSnapshotManager?: ProviderSnapshotManager,
     daemonRuntimeConfig?: {
       listen: string | null;
+      worktreesRoot?: string;
       relay: {
         enabled: boolean;
         endpoint: string;
@@ -438,6 +430,7 @@ export class VoiceAssistantWebSocketServer {
         publicUseTls: boolean;
       };
     },
+    serviceProxyPublicBaseUrl?: string | null,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.serverId = serverId;
@@ -464,32 +457,26 @@ export class VoiceAssistantWebSocketServer {
     this.workspaceGitService = workspaceGitService ?? createFallbackWorkspaceGitService();
     this.downloadTokenStore = downloadTokenStore;
     this.paseoHome = paseoHome;
+    this.worktreesRoot = daemonRuntimeConfig?.worktreesRoot;
     this.daemonConfigStore = daemonConfigStore;
     this.mcpBaseUrl = mcpBaseUrl;
     this.assignOptionalServices({
       speech,
       terminalManager,
       dictation,
-      agentProviderRuntimeSettings,
-      providerOverrides,
-      isDev,
       onLifecycleIntent,
-      scriptRouteStore,
+      serviceProxy,
       scriptRuntimeStore,
       onBranchChanged,
       getDaemonTcpPort,
       getDaemonTcpHost,
+      serviceProxyPublicBaseUrl,
       resolveScriptHealth,
     });
-    const providerSnapshotLogger = this.logger.child({ module: "provider-snapshot-manager" });
-    this.providerSnapshotManager = new ProviderSnapshotManager(
-      buildProviderRegistry(providerSnapshotLogger, {
-        runtimeSettings: this.agentProviderRuntimeSettings,
-        providerOverrides: this.providerOverrides,
-        isDev: this.isDev,
-      }),
-      providerSnapshotLogger,
-    );
+    if (!providerSnapshotManager) {
+      throw new Error("providerSnapshotManager is required");
+    }
+    this.providerSnapshotManager = providerSnapshotManager;
     this.serverCapabilities = buildServerCapabilities({
       readiness: this.speech?.getReadiness() ?? null,
     });
@@ -498,18 +485,10 @@ export class VoiceAssistantWebSocketServer {
         this.publishSpeechReadiness(snapshot);
       }) ?? null;
     this.unsubscribeDaemonConfigChange = this.daemonConfigStore.onChange((config) => {
-      this.providerOverrides = applyMutableProviderConfigToOverrides(
-        this.providerOverrides,
+      const nextAgentManagerState = this.providerSnapshotManager.applyMutableProviderConfig(
         config.providers,
       );
-      const registry = buildProviderRegistry(providerSnapshotLogger, {
-        runtimeSettings: this.agentProviderRuntimeSettings,
-        providerOverrides: this.providerOverrides,
-        isDev: this.isDev,
-      });
-      const clients = createClientsFromRegistry(registry, providerSnapshotLogger);
-      this.providerSnapshotManager.replaceRegistry(registry);
-      this.agentManager.updateProviderRegistry({ providerDefinitions: registry, clients });
+      this.agentManager.updateProviderRegistry(nextAgentManagerState);
       this.broadcastDaemonConfigChanged(config);
     });
 
@@ -534,31 +513,27 @@ export class VoiceAssistantWebSocketServer {
     speech: SpeechService | null | undefined;
     terminalManager: TerminalManager | null | undefined;
     dictation: { finalTimeoutMs?: number } | undefined;
-    agentProviderRuntimeSettings: AgentProviderRuntimeSettingsMap | undefined;
-    providerOverrides: Record<string, ProviderOverride> | undefined;
-    isDev: boolean | undefined;
     onLifecycleIntent: ((intent: SessionLifecycleIntent) => void) | undefined;
-    scriptRouteStore: ScriptRouteStore | null | undefined;
+    serviceProxy: ServiceProxySubsystem | null | undefined;
     scriptRuntimeStore: WorkspaceScriptRuntimeStore | null | undefined;
     onBranchChanged:
       | ((workspaceId: string, oldBranch: string | null, newBranch: string | null) => void)
       | undefined;
     getDaemonTcpPort: (() => number | null) | undefined;
     getDaemonTcpHost: (() => string | null) | undefined;
+    serviceProxyPublicBaseUrl: string | null | undefined;
     resolveScriptHealth: ((hostname: string) => ScriptHealthState | null) | undefined;
   }): void {
     this.speech = params.speech ?? null;
     this.terminalManager = params.terminalManager ?? null;
     this.dictation = params.dictation ?? null;
-    this.agentProviderRuntimeSettings = params.agentProviderRuntimeSettings;
-    this.providerOverrides = params.providerOverrides;
-    this.isDev = params.isDev === true;
     this.onLifecycleIntent = params.onLifecycleIntent ?? null;
-    this.scriptRouteStore = params.scriptRouteStore ?? null;
+    this.serviceProxy = params.serviceProxy ?? null;
     this.scriptRuntimeStore = params.scriptRuntimeStore ?? null;
     this.onBranchChanged = params.onBranchChanged ?? null;
     this.getDaemonTcpPort = params.getDaemonTcpPort ?? null;
     this.getDaemonTcpHost = params.getDaemonTcpHost ?? null;
+    this.serviceProxyPublicBaseUrl = params.serviceProxyPublicBaseUrl ?? null;
     this.resolveScriptHealth = params.resolveScriptHealth ?? null;
   }
 
@@ -891,6 +866,7 @@ export class VoiceAssistantWebSocketServer {
       downloadTokenStore: this.downloadTokenStore,
       pushTokenStore: this.pushTokenStore,
       paseoHome: this.paseoHome,
+      worktreesRoot: this.worktreesRoot,
       agentManager: this.agentManager,
       agentStorage: this.agentStorage,
       projectRegistry: this.projectRegistry,
@@ -908,12 +884,13 @@ export class VoiceAssistantWebSocketServer {
       tts: () => this.speech?.resolveTts() ?? null,
       terminalManager: this.terminalManager,
       providerSnapshotManager: this.providerSnapshotManager,
-      scriptRouteStore: this.scriptRouteStore ?? undefined,
+      serviceProxy: this.serviceProxy ?? undefined,
       scriptRuntimeStore: this.scriptRuntimeStore ?? undefined,
       workspaceSetupSnapshots: this.workspaceSetupSnapshots,
       onBranchChanged: this.onBranchChanged ?? undefined,
       getDaemonTcpPort: this.getDaemonTcpPort ?? undefined,
       getDaemonTcpHost: this.getDaemonTcpHost ?? undefined,
+      serviceProxyPublicBaseUrl: this.serviceProxyPublicBaseUrl,
       resolveScriptHealth: this.resolveScriptHealth ?? undefined,
       voice: {
         turnDetection: () => this.speech?.resolveTurnDetection() ?? null,
@@ -941,9 +918,6 @@ export class VoiceAssistantWebSocketServer {
               getSpeechReadiness: () => this.speech!.getReadiness(),
             }
           : undefined,
-      agentProviderRuntimeSettings: this.agentProviderRuntimeSettings,
-      providerOverrides: this.providerOverrides,
-      isDev: this.isDev,
       serverId: this.serverId,
       daemonVersion: this.daemonVersion,
       daemonRuntimeConfig: this.daemonRuntimeConfig,
@@ -1081,6 +1055,12 @@ export class VoiceAssistantWebSocketServer {
         checkoutGithubSetAutoMerge: true,
         // COMPAT(daemonStatusRpc): added in v0.1.76, remove gate after 2026-11-18.
         daemonStatusRpc: true,
+        // COMPAT(terminalRestoreModes): added in v0.1.81, remove gate after 2026-11-23.
+        "terminal-restore-modes": true,
+        // COMPAT(rewind): added in v0.1.X, drop the gate when floor >= v0.1.X.
+        rewind: true,
+        // COMPAT(checkoutRefresh): added in v0.1.86, remove gate after 2026-11-29.
+        checkoutRefresh: true,
       },
     };
   }

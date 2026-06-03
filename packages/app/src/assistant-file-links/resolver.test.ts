@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   classifyForResolution,
   fetchDaemonResolution,
@@ -7,6 +7,7 @@ import {
   type AssistantFileLinkContext,
   type DirectorySuggestionEntry,
   type DirectorySuggestionResult,
+  type GetDirectorySuggestions,
 } from "./resolver";
 
 const CONTEXT: AssistantFileLinkContext = {
@@ -20,7 +21,7 @@ function resolvedSuggestions(
 }
 
 function suggestionsFromMap(entriesByQuery: Record<string, DirectorySuggestionEntry[]>): {
-  getDirectorySuggestions: ReturnType<typeof vi.fn>;
+  getDirectorySuggestions: GetDirectorySuggestions;
   searches: Array<{
     query: string;
     cwd: string;
@@ -34,26 +35,21 @@ function suggestionsFromMap(entriesByQuery: Record<string, DirectorySuggestionEn
     matchMode: "suffix";
     limit: number;
   }> = [];
-  const getDirectorySuggestions = vi.fn(
-    async (input: {
-      query: string;
-      cwd: string;
-      includeFiles: true;
-      includeDirectories: false;
-      matchMode: "suffix";
-      limit: number;
-    }) => {
-      searches.push({
-        query: input.query,
-        cwd: input.cwd,
-        matchMode: input.matchMode,
-        limit: input.limit,
-      });
-      return resolvedSuggestions(entriesByQuery[input.query] ?? []);
-    },
-  );
+  const getDirectorySuggestions: GetDirectorySuggestions = async (input) => {
+    searches.push({
+      query: input.query,
+      cwd: input.cwd,
+      matchMode: input.matchMode,
+      limit: input.limit,
+    });
+    return resolvedSuggestions(entriesByQuery[input.query] ?? []);
+  };
   return { getDirectorySuggestions, searches };
 }
+
+const unavailableSuggestions: GetDirectorySuggestions = async () => {
+  throw new Error("daemon unavailable");
+};
 
 describe("classifyForResolution", () => {
   it("returns the directFile target synchronously", () => {
@@ -115,6 +111,40 @@ describe("classifyForResolution", () => {
     expect(result).toEqual({
       kind: "resolved",
       value: { kind: "external", url: "http://dumm.md" },
+    });
+  });
+
+  it("keeps absolute paths outside the workspace as direct file targets", () => {
+    const result = classifyForResolution({ href: "/tmp/outside.txt" }, CONTEXT);
+
+    expect(result).toEqual({
+      kind: "resolved",
+      value: {
+        kind: "file",
+        target: {
+          raw: "/tmp/outside.txt",
+          path: "/tmp/outside.txt",
+          lineStart: undefined,
+          lineEnd: undefined,
+        },
+      },
+    });
+  });
+
+  it("keeps tilde paths as direct file targets", () => {
+    const result = classifyForResolution({ href: "~/.paseo/plans/file-preview.md" }, CONTEXT);
+
+    expect(result).toEqual({
+      kind: "resolved",
+      value: {
+        kind: "file",
+        target: {
+          raw: "~/.paseo/plans/file-preview.md",
+          path: "~/.paseo/plans/file-preview.md",
+          lineStart: undefined,
+          lineEnd: undefined,
+        },
+      },
     });
   });
 
@@ -192,10 +222,6 @@ describe("fetchDaemonResolution", () => {
   });
 
   it("throws a typed unresolved error when the daemon throws", async () => {
-    const getDirectorySuggestions = vi.fn(async () => {
-      throw new Error("daemon unavailable");
-    });
-
     await expect(
       fetchDaemonResolution({
         ambiguousQuery: "dumm.md",
@@ -207,7 +233,7 @@ describe("fetchDaemonResolution", () => {
           lineEnd: undefined,
         },
         workspaceRoot: "/Users/test/project",
-        getDirectorySuggestions,
+        getDirectorySuggestions: unavailableSuggestions,
       }),
     ).rejects.toEqual(new UnresolvedFileLinkError("dumm.md"));
   });

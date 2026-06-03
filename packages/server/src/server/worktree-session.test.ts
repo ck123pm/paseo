@@ -107,7 +107,7 @@ function createWorkflowForRequestTest(options: {
         sessionLogger: createLogger(),
         terminalManager: null,
         archiveWorkspaceRecord: async () => {},
-        scriptRouteStore: null,
+        serviceProxy: null,
         scriptRuntimeStore: null,
         getDaemonTcpPort: null,
         getDaemonTcpHost: null,
@@ -416,7 +416,7 @@ describe("create-agent worktree setup boundary", () => {
           sessionLogger: createLogger(),
           terminalManager: null,
           archiveWorkspaceRecord: async () => {},
-          scriptRouteStore: null,
+          serviceProxy: null,
           scriptRuntimeStore: null,
           getDaemonTcpPort: null,
           getDaemonTcpHost: null,
@@ -471,10 +471,9 @@ describe("create-agent worktree setup boundary", () => {
   });
 });
 
-function createAgentStorageStub(): Pick<AgentStorage, "list" | "remove"> {
+function createAgentStorageStub(): Pick<AgentStorage, "list"> {
   return {
     list: async (): Promise<StoredAgentRecord[]> => [],
-    remove: vi.fn(async () => {}),
   };
 }
 
@@ -1726,10 +1725,14 @@ describe("archivePaseoWorktree", () => {
 
     const teardownStartTimes: Record<string, number> = {};
     const teardownEndTimes: Record<string, number> = {};
-    const closeAgentSpy = vi.fn(async (agentId: string) => {
+    const archiveAgentSpy = vi.fn(async (agentId: string) => {
       teardownStartTimes[agentId] = Date.now();
       await new Promise((resolve) => setTimeout(resolve, 100));
       teardownEndTimes[agentId] = Date.now();
+      return { archivedAt: new Date().toISOString() };
+    });
+    const archiveSnapshotSpy = vi.fn(async () => {
+      throw new Error("not expected for live agents");
     });
     const killTerminalsUnderPath = vi.fn(async () => {
       teardownStartTimes.__terminals = Date.now();
@@ -1737,8 +1740,7 @@ describe("archivePaseoWorktree", () => {
       teardownEndTimes.__terminals = Date.now();
     });
 
-    const emitted: SessionOutboundMessage[] = [];
-    const removedAgents = await archivePaseoWorktree(
+    const archivedAgents = await archivePaseoWorktree(
       {
         paseoHome,
         github: createGitHubServiceStub(),
@@ -1747,11 +1749,11 @@ describe("archivePaseoWorktree", () => {
             createManagedAgentForArchive({ id: "agent-1", cwd: created.worktreePath }),
             createManagedAgentForArchive({ id: "agent-2", cwd: created.worktreePath }),
           ],
-          closeAgent: closeAgentSpy,
+          archiveAgent: archiveAgentSpy,
+          archiveSnapshot: archiveSnapshotSpy,
         },
         agentStorage: createAgentStorageStub(),
         archiveWorkspaceRecord: vi.fn(async () => {}),
-        emit: (msg) => emitted.push(msg),
         ...createWorkspaceArchivingDeps(),
         isPathWithinRoot: createIsPathWithinRoot(),
         killTerminalsUnderPath,
@@ -1764,9 +1766,10 @@ describe("archivePaseoWorktree", () => {
       },
     );
 
-    expect(removedAgents).toEqual(expect.arrayContaining(["agent-1", "agent-2"]));
+    expect(archivedAgents).toEqual(expect.arrayContaining(["agent-1", "agent-2"]));
     expect(existsSync(created.worktreePath)).toBe(false);
-    expect(closeAgentSpy).toHaveBeenCalledTimes(2);
+    expect(archiveAgentSpy).toHaveBeenCalledTimes(2);
+    expect(archiveSnapshotSpy).not.toHaveBeenCalled();
     expect(killTerminalsUnderPath).toHaveBeenCalledWith(created.worktreePath);
 
     // All teardown work must overlap — sequential would take ~300ms, parallel ~100ms.
@@ -1834,10 +1837,14 @@ describe("archivePaseoWorktree", () => {
       }
       events.push(`emit:${Array.from(workspaceIds).join(",")}`);
     });
-    const closeAgent = vi.fn(async () => {
+    const archiveAgent = vi.fn(async () => {
       events.push("close:start");
       await emitWorkspaceUpdatesForWorkspaceIds(affectedIds);
       events.push("close:end");
+      return { archivedAt: new Date().toISOString() };
+    });
+    const archiveSnapshot = vi.fn(async () => {
+      throw new Error("not expected for live agents");
     });
 
     await handlePaseoWorktreeArchiveRequest(
@@ -1850,7 +1857,8 @@ describe("archivePaseoWorktree", () => {
         },
         agentManager: {
           listAgents: () => [liveAgent],
-          closeAgent,
+          archiveAgent,
+          archiveSnapshot,
         },
         agentStorage: createAgentStorageStub(),
         archiveWorkspaceRecord: vi.fn(async (workspaceId: string) => {
@@ -1927,8 +1935,20 @@ describe("archivePaseoWorktree", () => {
     });
   });
 
-  test("clears archiving state and leaves workspace records active when worktree delete fails", async () => {
-    const { tempDir, repoDir } = createGitRepo();
+  test("archives the workspace record even when the teardown script fails", async () => {
+    const teardownLogPath = isPlatform("win32")
+      ? 'Set-Content -Path (Join-Path $env:PASEO_SOURCE_CHECKOUT_PATH "teardown-start.log") -Value "started"'
+      : 'echo "started" > "$PASEO_SOURCE_CHECKOUT_PATH/teardown-start.log"';
+    const failingTeardownCommand = isPlatform("win32")
+      ? 'Write-Error "boom"; exit 9'
+      : "echo boom 1>&2; exit 9";
+    const { tempDir, repoDir } = createGitRepo({
+      paseoConfig: {
+        worktree: {
+          teardown: [teardownLogPath, failingTeardownCommand],
+        },
+      },
+    });
     cleanupPaths.push(tempDir);
 
     const paseoHome = path.join(tempDir, ".paseo");
@@ -1941,12 +1961,21 @@ describe("archivePaseoWorktree", () => {
       paseoHome,
     });
     const archivingByWorkspaceId = new Map<string, string>();
-    const emittedUpdates: Array<{
-      kind: "upsert";
-      workspaceId: string;
-      archivingAt: string | null;
-    }> = [];
-    const archiveWorkspaceRecord = vi.fn(async () => {});
+    const archivedWorkspaceIds = new Set<string>();
+    const emittedUpdates: Array<
+      | {
+          kind: "upsert";
+          workspaceId: string;
+          archivingAt: string | null;
+        }
+      | {
+          kind: "remove";
+          workspaceId: string;
+        }
+    > = [];
+    const archiveWorkspaceRecord = vi.fn(async (workspaceId: string) => {
+      archivedWorkspaceIds.add(workspaceId);
+    });
 
     await expect(
       archivePaseoWorktree(
@@ -1956,13 +1985,22 @@ describe("archivePaseoWorktree", () => {
           workspaceGitService: { getSnapshot: vi.fn(async () => null) },
           agentManager: {
             listAgents: () => [],
-            closeAgent: vi.fn(async () => {}),
+            archiveAgent: vi.fn(async () => ({ archivedAt: new Date().toISOString() })),
+            archiveSnapshot: vi.fn(async () => {
+              throw new Error("not expected for empty agent list");
+            }),
           },
           agentStorage: createAgentStorageStub(),
           archiveWorkspaceRecord,
-          emit: vi.fn(),
           emitWorkspaceUpdatesForWorkspaceIds: vi.fn(async (workspaceIds: Iterable<string>) => {
             for (const workspaceId of workspaceIds) {
+              if (archivedWorkspaceIds.has(workspaceId)) {
+                emittedUpdates.push({
+                  kind: "remove",
+                  workspaceId,
+                });
+                continue;
+              }
               emittedUpdates.push({
                 kind: "upsert",
                 workspaceId,
@@ -1986,23 +2024,23 @@ describe("archivePaseoWorktree", () => {
         },
         {
           targetPath: created.worktreePath,
-          repoRoot: null,
+          repoRoot: repoDir,
           requestId: "req-archive-delete-fails",
         },
       ),
-    ).rejects.toThrow("cwd or worktreesRoot is required to delete a Paseo worktree");
+    ).rejects.toThrow("Worktree teardown command failed");
 
     expect(existsSync(created.worktreePath)).toBe(true);
-    expect(archiveWorkspaceRecord).not.toHaveBeenCalled();
+    expect(existsSync(path.join(repoDir, "teardown-start.log"))).toBe(true);
+    expect(archiveWorkspaceRecord).toHaveBeenCalledWith(created.worktreePath);
     expect(emittedUpdates[0]).toEqual({
       kind: "upsert",
       workspaceId: created.worktreePath,
       archivingAt: expect.any(String),
     });
     expect(emittedUpdates.at(-1)).toEqual({
-      kind: "upsert",
+      kind: "remove",
       workspaceId: created.worktreePath,
-      archivingAt: null,
     });
   });
 
@@ -2030,11 +2068,13 @@ describe("archivePaseoWorktree", () => {
         github: createGitHubServiceStub(),
         agentManager: {
           listAgents: () => [],
-          closeAgent: vi.fn(async () => {}),
+          archiveAgent: vi.fn(async () => ({ archivedAt: new Date().toISOString() })),
+          archiveSnapshot: vi.fn(async () => {
+            throw new Error("not expected for empty agent list");
+          }),
         },
         agentStorage: createAgentStorageStub(),
         archiveWorkspaceRecord: vi.fn(async () => {}),
-        emit: vi.fn(),
         ...createWorkspaceArchivingDeps(),
         isPathWithinRoot: createIsPathWithinRoot(),
         killTerminalsUnderPath,
@@ -2075,11 +2115,13 @@ describe("archivePaseoWorktree", () => {
         workspaceGitService: workspaceGitService as unknown as WorkspaceGitService,
         agentManager: {
           listAgents: () => [],
-          closeAgent: vi.fn(async () => {}),
+          archiveAgent: vi.fn(async () => ({ archivedAt: new Date().toISOString() })),
+          archiveSnapshot: vi.fn(async () => {
+            throw new Error("not expected for empty agent list");
+          }),
         },
         agentStorage: createAgentStorageStub(),
         archiveWorkspaceRecord: vi.fn(async () => {}),
-        emit: vi.fn(),
         ...createWorkspaceArchivingDeps(),
         isPathWithinRoot: createIsPathWithinRoot(),
         killTerminalsUnderPath: vi.fn(async () => {}),
@@ -2126,7 +2168,10 @@ describe("archivePaseoWorktree", () => {
         github: createGitHubServiceStub(),
         agentManager: {
           listAgents: () => [],
-          closeAgent: vi.fn(async () => {}),
+          archiveAgent: vi.fn(async () => ({ archivedAt: new Date().toISOString() })),
+          archiveSnapshot: vi.fn(async () => {
+            throw new Error("not expected for empty agent list");
+          }),
         },
         agentStorage: createAgentStorageStub(),
         archiveWorkspaceRecord: vi.fn(async () => {}),

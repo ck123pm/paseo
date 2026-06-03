@@ -67,10 +67,10 @@ const CATALOG_DATA = [
     title: "Cline",
     description:
       "Autonomous coding agent CLI - capable of creating/editing files, running commands, using the browser, and more",
-    version: "2.18.0",
+    version: "3",
     iconId: "cline",
     installLink: "https://cline.bot/cli",
-    command: ["npx", "-y", "cline@2.18.0", "--acp"],
+    command: ["npx", "-y", "cline@3", "--acp"],
   },
   {
     id: "codebuddy-code",
@@ -143,6 +143,15 @@ const CATALOG_DATA = [
     iconId: "deepseek-tui",
     installLink: "https://github.com/Hmbown/DeepSeek-TUI",
     command: ["deepseek", "serve", "--acp"],
+  },
+  {
+    id: "devin",
+    title: "Devin CLI",
+    description: "Cognition's Devin for Terminal via Agent Client Protocol",
+    version: "manual",
+    iconId: null,
+    installLink: "https://cli.devin.ai/docs",
+    command: ["devin", "acp"],
   },
   {
     id: "dimcode",
@@ -221,6 +230,16 @@ const CATALOG_DATA = [
     iconId: "goose",
     installLink: "https://block.github.io/goose/",
     command: ["goose", "acp"],
+  },
+  {
+    id: "grok",
+    title: "Grok",
+    description:
+      "xAI's Grok Build agentic coding CLI with plan mode and parallel subagents. Requires a SuperGrok or X Premium+ subscription.",
+    version: "0.2.11",
+    iconId: "grok",
+    installLink: "https://docs.x.ai/build/overview",
+    command: ["grok", "agent", "stdio"],
   },
   {
     id: "hermes",

@@ -1,4 +1,5 @@
-import type { AgentTimelineItem, DaemonClient } from "@ck123pm/paseo-server";
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import type { AgentTimelineItem } from "@getpaseo/protocol/agent-types";
 
 interface FetchProjectedTimelineItemsInput {
   client: DaemonClient;

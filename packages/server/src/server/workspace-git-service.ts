@@ -1,16 +1,19 @@
 import { watch, type FSWatcher } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { LRUCache } from "lru-cache";
 import pLimit from "p-limit";
 import type pino from "pino";
-import type { ProjectCheckoutLitePayload } from "../shared/messages.js";
+import type { ProjectCheckoutLitePayload } from "@getpaseo/protocol/messages";
 import type { CheckoutContext } from "../utils/checkout-git.js";
 import {
   type BranchCheckoutResolution,
   type BranchSuggestion,
+  type CheckoutSnapshotFacts,
   type CheckoutDiffCompare,
   type CheckoutDiffResult,
   getCheckoutDiff,
+  getCheckoutSnapshotFacts,
   getCheckoutShortstat,
   getCheckoutStatus,
   getPullRequestStatus,
@@ -45,6 +48,11 @@ export const DEFAULT_WORKING_TREE_WATCH_FALLBACK_REFRESH_MS = 60_000;
 const WORKSPACE_GIT_AUXILIARY_READ_TTL_MS = 15_000;
 // Non-forced refresh triggers share this minimum gap to absorb watcher/self-heal bursts; force bypasses it.
 const WORKSPACE_GIT_INTERNAL_MIN_GAP_MS = 2_000;
+// Heavy values (multi-MB highlighted diffs); cap aggressively. Ephemeral worktree cwds would otherwise pile up forever.
+const WORKSPACE_GIT_CHECKOUT_DIFF_CACHE_MAX = 64;
+// Small values (booleans, short strings, small arrays); generous cap.
+const WORKSPACE_GIT_AUXILIARY_CACHE_MAX = 256;
+const WORKSPACE_GIT_FACTS_REUSE_TTL_MS = 1_000;
 const LINUX_WATCH_MAX_DIRS = 5_000;
 const LINUX_WATCH_REFRESH_COOLDOWN_MS = 2_000;
 const LINUX_WATCH_IGNORE_TTL_MS = 5 * 60 * 1_000;
@@ -231,6 +239,7 @@ type WorkspaceGitRefreshState =
 interface WorkspaceGitServiceDependencies {
   watch: typeof watch;
   readdir: typeof readdir;
+  getCheckoutSnapshotFacts: typeof getCheckoutSnapshotFacts;
   getCheckoutStatus: typeof getCheckoutStatus;
   getCheckoutShortstat: typeof getCheckoutShortstat;
   getCheckoutDiff: typeof getCheckoutDiff;
@@ -250,6 +259,7 @@ interface WorkspaceGitServiceDependencies {
 interface WorkspaceGitServiceOptions {
   logger: pino.Logger;
   paseoHome: string;
+  worktreesRoot?: string;
   polling?: Partial<WorkspaceGitPollingConfig>;
   deps?: Partial<WorkspaceGitServiceDependencies>;
 }
@@ -267,7 +277,7 @@ interface WorkspaceGitTarget {
   debounceTimer: NodeJS.Timeout | null;
   selfHealTimer: NodeJS.Timeout | null;
   githubPollSubscription: { unsubscribe: () => void } | null;
-  githubPollHeadRef: string | null;
+  githubPollKey: string | null;
   refreshState: WorkspaceGitRefreshState;
   latestGit: WorkspaceGitRuntimeSnapshot["git"] | null;
   latestGitLoadedAtMs: number | null;
@@ -275,6 +285,9 @@ interface WorkspaceGitTarget {
   latestGithubLoadedAtMs: number | null;
   latestSnapshot: WorkspaceGitRuntimeSnapshot | null;
   latestSnapshotLoadedAtMs: number | null;
+  latestFacts: CheckoutSnapshotFacts | null;
+  latestFactsLoadedAtMs: number | null;
+  factsPromise: Promise<CheckoutSnapshotFacts> | null;
   latestFingerprint: string | null;
   lastShellOutAtMs: number | null;
   repoGitRoot: string | null;
@@ -311,10 +324,16 @@ interface WorkspaceGitAuxiliaryReadCacheEntry<T> {
   inFlight: Promise<T> | null;
 }
 
+interface WorkspaceGitHubPollTarget {
+  headRef: string;
+  headRepositoryOwner?: string;
+}
+
 function buildDefaultWorkspaceGitServiceDeps(): WorkspaceGitServiceDependencies {
   return {
     watch,
     readdir,
+    getCheckoutSnapshotFacts,
     getCheckoutStatus,
     getCheckoutShortstat,
     getCheckoutDiff,
@@ -341,6 +360,7 @@ function resolveWorkspaceGitServiceDeps(
 export class WorkspaceGitServiceImpl implements WorkspaceGitService {
   private readonly logger: pino.Logger;
   private readonly paseoHome: string;
+  private readonly worktreesRoot: string | undefined;
   private readonly polling: WorkspaceGitPollingConfig;
   private readonly deps: WorkspaceGitServiceDependencies;
   private readonly snapshotUpdatedListeners = new Set<WorkspaceGitSnapshotUpdatedListener>();
@@ -349,37 +369,38 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
   private readonly workingTreeWatchTargets = new Map<string, WorkingTreeWatchTarget>();
   private readonly workingTreeWatchSetups = new Map<string, Promise<WorkingTreeWatchTarget>>();
   private readonly linuxIgnoredDirsCache = new Map<string, { ignored: Set<string>; ts: number }>();
-  private readonly branchValidationCache = new Map<
+  private readonly branchValidationCache = new LRUCache<
     string,
     WorkspaceGitAuxiliaryReadCacheEntry<WorkspaceGitBranchValidationResult>
-  >();
-  private readonly localBranchCache = new Map<
+  >({ max: WORKSPACE_GIT_AUXILIARY_CACHE_MAX });
+  private readonly localBranchCache = new LRUCache<
     string,
     WorkspaceGitAuxiliaryReadCacheEntry<boolean>
-  >();
-  private readonly branchSuggestionsCache = new Map<
+  >({ max: WORKSPACE_GIT_AUXILIARY_CACHE_MAX });
+  private readonly branchSuggestionsCache = new LRUCache<
     string,
     WorkspaceGitAuxiliaryReadCacheEntry<WorkspaceGitBranchSuggestion[]>
-  >();
-  private readonly stashListCache = new Map<
+  >({ max: WORKSPACE_GIT_AUXILIARY_CACHE_MAX });
+  private readonly stashListCache = new LRUCache<
     string,
     WorkspaceGitAuxiliaryReadCacheEntry<WorkspaceGitStashEntry[]>
-  >();
-  private readonly worktreeListCache = new Map<
+  >({ max: WORKSPACE_GIT_AUXILIARY_CACHE_MAX });
+  private readonly worktreeListCache = new LRUCache<
     string,
     WorkspaceGitAuxiliaryReadCacheEntry<WorkspaceGitWorktreeInfo[]>
-  >();
-  private readonly defaultBranchCache = new Map<
+  >({ max: WORKSPACE_GIT_AUXILIARY_CACHE_MAX });
+  private readonly defaultBranchCache = new LRUCache<
     string,
     WorkspaceGitAuxiliaryReadCacheEntry<string>
-  >();
-  private readonly checkoutDiffCache = new Map<
+  >({ max: WORKSPACE_GIT_AUXILIARY_CACHE_MAX });
+  private readonly checkoutDiffCache = new LRUCache<
     string,
     WorkspaceGitAuxiliaryReadCacheEntry<CheckoutDiffResult>
-  >();
+  >({ max: WORKSPACE_GIT_CHECKOUT_DIFF_CACHE_MAX });
   constructor(options: WorkspaceGitServiceOptions) {
     this.logger = options.logger.child({ module: "workspace-git-service" });
     this.paseoHome = options.paseoHome;
+    this.worktreesRoot = options.worktreesRoot;
     this.polling = {
       backgroundFetchIntervalMs:
         options.polling?.backgroundFetchIntervalMs ?? DEFAULT_BACKGROUND_GIT_FETCH_INTERVAL_MS,
@@ -442,6 +463,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     try {
       const status = await this.deps.getCheckoutStatus(normalizedCwd, {
         paseoHome: this.paseoHome,
+        worktreesRoot: this.worktreesRoot,
         logger: this.logger,
       });
       if (!status.isGit) {
@@ -488,7 +510,10 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     const normalizedOptions = this.normalizeCheckoutDiffOptions(options);
     const key = this.buildCheckoutDiffCacheKey(normalizedCwd, normalizedOptions);
     return this.readAuxiliaryCache(this.checkoutDiffCache, key, readOptions, () =>
-      this.deps.getCheckoutDiff(normalizedCwd, normalizedOptions, { paseoHome: this.paseoHome }),
+      this.deps.getCheckoutDiff(normalizedCwd, normalizedOptions, {
+        paseoHome: this.paseoHome,
+        worktreesRoot: this.worktreesRoot,
+      }),
     );
   }
 
@@ -585,6 +610,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       this.deps.listPaseoWorktrees({
         cwd: repoRoot,
         paseoHome: this.paseoHome,
+        worktreesRoot: this.worktreesRoot,
       }),
     );
   }
@@ -706,7 +732,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
   }
 
   private readAuxiliaryCache<T>(
-    cache: Map<string, WorkspaceGitAuxiliaryReadCacheEntry<T>>,
+    cache: LRUCache<string, WorkspaceGitAuxiliaryReadCacheEntry<T>>,
     key: string,
     options: WorkspaceGitReadOptions | undefined,
     load: () => Promise<T>,
@@ -748,7 +774,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
   }
 
   private ensureAuxiliaryCacheEntry<T>(
-    cache: Map<string, WorkspaceGitAuxiliaryReadCacheEntry<T>>,
+    cache: LRUCache<string, WorkspaceGitAuxiliaryReadCacheEntry<T>>,
     key: string,
   ): WorkspaceGitAuxiliaryReadCacheEntry<T> {
     const existing = cache.get(key);
@@ -792,7 +818,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       debounceTimer: null,
       selfHealTimer: null,
       githubPollSubscription: null,
-      githubPollHeadRef: null,
+      githubPollKey: null,
       refreshState: { status: "idle" },
       latestGit: null,
       latestGitLoadedAtMs: null,
@@ -800,6 +826,9 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       latestGithubLoadedAtMs: null,
       latestSnapshot: null,
       latestSnapshotLoadedAtMs: null,
+      latestFacts: null,
+      latestFactsLoadedAtMs: null,
+      factsPromise: null,
       latestFingerprint: null,
       lastShellOutAtMs: null,
       repoGitRoot: null,
@@ -850,7 +879,8 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
   }
 
   private async setupWorkspaceObservation(target: WorkspaceGitTarget): Promise<void> {
-    const gitDir = await this.deps.resolveAbsoluteGitDir(target.cwd);
+    const facts = await this.getFactsForObservation(target);
+    const gitDir = facts?.isGit ? facts.absoluteGitDir : null;
     if (!this.isActiveObservedWorkspaceTarget(target)) {
       return;
     }
@@ -859,7 +889,10 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       return;
     }
 
-    const repoGitRoot = await this.resolveWorkspaceGitRefsRoot(gitDir);
+    const repoGitRoot =
+      facts?.isGit && facts.gitCommonDir
+        ? facts.gitCommonDir
+        : await this.resolveWorkspaceGitRefsRoot(gitDir);
     if (!this.isActiveObservedWorkspaceTarget(target)) {
       return;
     }
@@ -869,6 +902,48 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     if (this.isActiveObservedWorkspaceTarget(target)) {
       target.observationSetupComplete = true;
     }
+  }
+
+  private async getFactsForObservation(
+    target: WorkspaceGitTarget,
+  ): Promise<CheckoutSnapshotFacts | null> {
+    return this.loadCheckoutFacts(target, {
+      paseoHome: this.paseoHome,
+      logger: this.logger,
+      allowRecent: true,
+    });
+  }
+
+  private loadCheckoutFacts(
+    target: WorkspaceGitTarget,
+    options: CheckoutContext & { allowRecent: boolean },
+  ): Promise<CheckoutSnapshotFacts> {
+    if (options.allowRecent && target.latestFacts && target.latestFactsLoadedAtMs !== null) {
+      const ageMs = this.deps.now().getTime() - target.latestFactsLoadedAtMs;
+      if (ageMs < WORKSPACE_GIT_FACTS_REUSE_TTL_MS) {
+        return Promise.resolve(target.latestFacts);
+      }
+    }
+
+    if (target.factsPromise) {
+      return target.factsPromise;
+    }
+
+    const { allowRecent: _allowRecent, ...context } = options;
+    const promise = this.deps
+      .getCheckoutSnapshotFacts(target.cwd, context)
+      .then((facts) => {
+        target.latestFacts = facts;
+        target.latestFactsLoadedAtMs = this.deps.now().getTime();
+        return facts;
+      })
+      .finally(() => {
+        if (target.factsPromise === promise) {
+          target.factsPromise = null;
+        }
+      });
+    target.factsPromise = promise;
+    return promise;
   }
 
   private isActiveObservedWorkspaceTarget(target: WorkspaceGitTarget): boolean {
@@ -1009,7 +1084,11 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       return;
     }
 
-    const hasOrigin = await this.deps.hasOriginRemote(workspaceTarget.cwd);
+    const facts = workspaceTarget.latestFacts;
+    const hasOrigin =
+      facts?.isGit === true
+        ? facts.remoteUrl !== null
+        : await this.deps.hasOriginRemote(workspaceTarget.cwd);
     if (!this.isActiveObservedWorkspaceTarget(workspaceTarget)) {
       return;
     }
@@ -1099,23 +1178,28 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       return;
     }
 
-    const headRef = git.currentBranch;
+    const pollTarget = this.resolveGitHubPollTarget(target);
+    const remoteUrl = git.remoteUrl;
     const hasGitHubRemote =
-      target.cachedGitHubRemote?.remoteUrl === git.remoteUrl &&
+      target.cachedGitHubRemote?.remoteUrl === remoteUrl &&
       target.cachedGitHubRemote.identity !== null;
-    if (!headRef || !hasGitHubRemote) {
+    if (!pollTarget || remoteUrl === null || !hasGitHubRemote) {
       this.stopGitHubPollForTarget(target);
       return;
     }
-    if (target.githubPollHeadRef === headRef && target.githubPollSubscription) {
+    const pollKey = buildWorkspaceGitHubPollKey(remoteUrl, pollTarget);
+    if (target.githubPollKey === pollKey && target.githubPollSubscription) {
       return;
     }
 
     this.stopGitHubPollForTarget(target);
-    target.githubPollHeadRef = headRef;
+    target.githubPollKey = pollKey;
     target.githubPollSubscription = this.deps.github.retainCurrentPullRequestStatusPoll({
       cwd: target.cwd,
-      headRef,
+      headRef: pollTarget.headRef,
+      ...(pollTarget.headRepositoryOwner
+        ? { headRepositoryOwner: pollTarget.headRepositoryOwner }
+        : {}),
       onStatus: (status) => {
         if (!this.isActiveObservedWorkspaceTarget(target)) {
           return;
@@ -1126,17 +1210,40 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       },
       onError: (error) => {
         this.logger.warn(
-          { err: error, cwd: target.cwd, headRef, reason: "self-heal-github" },
+          {
+            err: error,
+            cwd: target.cwd,
+            headRef: pollTarget.headRef,
+            headRepositoryOwner: pollTarget.headRepositoryOwner,
+            reason: "self-heal-github",
+          },
           "Failed to run GitHub self-heal refresh",
         );
       },
     });
   }
 
+  private resolveGitHubPollTarget(target: WorkspaceGitTarget): WorkspaceGitHubPollTarget | null {
+    const git = target.latestGit;
+    if (!git?.currentBranch) {
+      return null;
+    }
+
+    const lookupTarget =
+      target.latestFacts?.isGit && target.latestFacts.currentBranch === git.currentBranch
+        ? target.latestFacts.pullRequestLookupTarget
+        : null;
+    if (lookupTarget) {
+      return lookupTarget;
+    }
+
+    return { headRef: git.currentBranch };
+  }
+
   private stopGitHubPollForTarget(target: WorkspaceGitTarget): void {
     target.githubPollSubscription?.unsubscribe();
     target.githubPollSubscription = null;
-    target.githubPollHeadRef = null;
+    target.githubPollKey = null;
   }
 
   private addWorkingTreeWatcher(
@@ -1498,9 +1605,9 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     target: WorkspaceGitTarget,
     request: WorkspaceGitRefreshRequest,
   ): Promise<WorkspaceGitRuntimeSnapshot> {
-    await this.refreshGitSnapshot(target, request);
+    const facts = await this.refreshGitSnapshot(target, request);
     if (request.includeGitHub) {
-      await this.refreshGitHubSnapshot(target, request);
+      await this.refreshGitHubSnapshot(target, request, facts);
     }
 
     const snapshot = this.combineSnapshot(target);
@@ -1511,13 +1618,22 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
   private async refreshGitSnapshot(
     target: WorkspaceGitTarget,
     request: WorkspaceGitRefreshRequest,
-  ): Promise<void> {
+  ): Promise<CheckoutSnapshotFacts> {
     const now = this.deps.now();
     target.lastShellOutAtMs = now.getTime();
 
     const cwd = target.cwd;
     const previousGitHubPollKey = this.getGitHubPollKey(target);
-    const context: CheckoutContext = { paseoHome: this.paseoHome, logger: this.logger };
+    const baseContext: CheckoutContext = {
+      paseoHome: this.paseoHome,
+      worktreesRoot: this.worktreesRoot,
+      logger: this.logger,
+    };
+    const facts = await this.loadCheckoutFacts(target, {
+      ...baseContext,
+      allowRecent: !request.force,
+    });
+    const context: CheckoutContext = { ...baseContext, facts };
     const checkoutStatus = await this.deps.getCheckoutStatus(cwd, context);
     if (!checkoutStatus.isGit) {
       target.latestGit = buildNotGitSnapshot(cwd).git;
@@ -1525,7 +1641,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       target.cachedGitHubRemote = null;
       target.latestGithub = buildGitHubUnavailableSnapshot();
       target.latestGithubLoadedAtMs = target.latestGitLoadedAtMs;
-      return;
+      return facts;
     }
 
     await this.resolveGitHubRemoteForTarget(target, checkoutStatus.remoteUrl);
@@ -1554,11 +1670,13 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       target.latestGithub = buildGitHubUnavailableSnapshot();
       target.latestGithubLoadedAtMs = target.latestGitLoadedAtMs;
     }
+    return facts;
   }
 
   private async refreshGitHubSnapshot(
     target: WorkspaceGitTarget,
     request: WorkspaceGitRefreshRequest,
+    facts: CheckoutSnapshotFacts,
   ): Promise<void> {
     const githubRemote = target.cachedGitHubRemote?.identity ?? null;
     const forceGitHub = request.force && request.includeGitHub;
@@ -1573,6 +1691,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       deps: this.deps,
       force: forceGitHub,
       reason: request.reason,
+      facts,
     });
     target.latestGithubLoadedAtMs = this.deps.now().getTime();
   }
@@ -1600,7 +1719,12 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       return null;
     }
 
-    return JSON.stringify([git.remoteUrl, git.currentBranch]);
+    const pollTarget = this.resolveGitHubPollTarget(target);
+    if (!pollTarget) {
+      return null;
+    }
+
+    return buildWorkspaceGitHubPollKey(git.remoteUrl, pollTarget);
   }
 
   private rememberGitHubSnapshot(
@@ -1785,6 +1909,7 @@ async function loadGitHubSnapshot(options: {
   deps: Pick<WorkspaceGitServiceDependencies, "getPullRequestStatus" | "github">;
   force?: boolean;
   reason?: string;
+  facts?: CheckoutSnapshotFacts;
 }): Promise<WorkspaceGitRuntimeSnapshot["github"]> {
   if (!options.githubRemote) {
     return {
@@ -1805,10 +1930,15 @@ async function loadGitHubSnapshot(options: {
   }
 
   try {
-    const result = await options.deps.getPullRequestStatus(options.cwd, options.deps.github, {
-      force: options.force,
-      reason: options.reason,
-    });
+    const result = await options.deps.getPullRequestStatus(
+      options.cwd,
+      options.deps.github,
+      {
+        force: options.force,
+        reason: options.reason,
+      },
+      { facts: options.facts },
+    );
     return {
       featuresEnabled: true,
       pullRequest: result.status,
@@ -1899,6 +2029,10 @@ function buildGitHubSnapshotFromStatus(
     pullRequest: status,
     error: null,
   };
+}
+
+function buildWorkspaceGitHubPollKey(remoteUrl: string, target: WorkspaceGitHubPollTarget): string {
+  return JSON.stringify([remoteUrl, target.headRef, target.headRepositoryOwner ?? null]);
 }
 
 async function runGitFetch(cwd: string): Promise<void> {

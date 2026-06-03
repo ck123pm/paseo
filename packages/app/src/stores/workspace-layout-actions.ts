@@ -1,5 +1,6 @@
 import invariant from "tiny-invariant";
 import type { WorkspaceTab, WorkspaceTabTarget } from "@/stores/workspace-tabs-store";
+import { MIN_SPLIT_SIZE } from "@/stores/workspace-layout-constants";
 import { defaultWorkspaceLayoutIds } from "@/stores/workspace-layout-ids";
 import type { WorkspaceLayoutNodeIdPrefix } from "@/stores/workspace-layout-ids";
 import {
@@ -208,7 +209,6 @@ export interface WorkspaceTabSnapshot {
 }
 
 const DEFAULT_PANE_ID = "main";
-const MIN_SPLIT_SIZE = 0.1;
 
 function trimNonEmpty(value: string | null | undefined): string | null {
   if (typeof value !== "string") {
@@ -1772,13 +1772,13 @@ export function reconcileWorkspaceTabs(
       continue;
     }
     if (group.tabs.some((tab) => tab.tabId === originalFocusedTabId)) {
-      reconciledFocusedTabId = canonicalTabId;
+      reconciledFocusedTabId = keeper.tabId;
     }
-    if (keeper.tabId !== canonicalTabId || !workspaceTabTargetsEqual(keeper.target, group.target)) {
+    if (!workspaceTabTargetsEqual(keeper.target, group.target)) {
       nextLayout = withNormalizedParentTabMap({
         root: replaceTabInTree(asInternalLayout(nextLayout).root, {
           tabId: keeper.tabId,
-          nextTabId: canonicalTabId,
+          nextTabId: keeper.tabId,
           target: group.target,
         }),
         focusedPaneId: nextLayout.focusedPaneId,

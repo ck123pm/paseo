@@ -5,14 +5,13 @@ import { z } from "zod";
 import {
   AgentProviderRuntimeSettingsMapSchema,
   migrateProviderSettings,
-  ProviderOverrideSchema,
+  ProviderOverridesSchema,
 } from "./agent/provider-launch-config.js";
 import type { AgentProviderRuntimeSettingsMap } from "./agent/provider-launch-config.js";
 import { ensurePrivateFile, writePrivateFileSync } from "./private-files.js";
 
 export const LogLevelSchema = z.enum(["trace", "debug", "info", "warn", "error", "fatal"]);
 export const LogFormatSchema = z.enum(["pretty", "json"]);
-const PositiveIntegerSchema = z.number().int().positive();
 
 const LogConfigSchema = z
   .object({
@@ -64,15 +63,13 @@ const ProvidersSchema = z
   })
   .strict();
 
-const BcryptHashSchema = z.string().regex(/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/, {
-  message: "Expected a bcrypt hash",
-});
-
-const DaemonAuthSchema = z
+const WorktreesConfigSchema = z
   .object({
-    password: BcryptHashSchema.optional(),
+    root: z.string().min(1).optional(),
   })
   .strict();
+
+const PositiveIntegerSchema = z.number().int().positive();
 
 const DaemonWorkspaceGitConfigSchema = z
   .object({
@@ -86,6 +83,16 @@ const DaemonWorkspaceConfigSchema = z
   .object({
     git: DaemonWorkspaceGitConfigSchema.optional(),
     reconcileIntervalMs: PositiveIntegerSchema.optional(),
+  })
+  .strict();
+
+const BcryptHashSchema = z.string().regex(/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/, {
+  message: "Expected a bcrypt hash",
+});
+
+const DaemonAuthSchema = z
+  .object({
+    password: BcryptHashSchema.optional(),
   })
   .strict();
 
@@ -147,6 +154,20 @@ const FeatureVoiceModeSchema = z
   })
   .strict();
 
+const StructuredGenerationProviderConfigSchema = z
+  .object({
+    provider: z.string().min(1),
+    model: z.string().min(1).optional(),
+    thinkingOptionId: z.string().min(1).optional(),
+  })
+  .strict();
+
+const AgentMetadataGenerationSchema = z
+  .object({
+    providers: z.array(StructuredGenerationProviderConfigSchema).optional(),
+  })
+  .strict();
+
 const AppLocalWebSchema = z
   .object({
     host: z.string().min(1).optional(),
@@ -155,57 +176,6 @@ const AppLocalWebSchema = z
   .strict();
 
 const BUILTIN_PROVIDER_IDS = ["claude", "codex", "copilot", "opencode", "pi"] as const;
-const PROVIDER_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
-
-const ProviderOverridesSchema = z
-  .record(z.string(), ProviderOverrideSchema)
-  .superRefine((providers, ctx) => {
-    const builtinProviderIdSet = new Set<string>(BUILTIN_PROVIDER_IDS);
-    const validExtendsValues = new Set<string>([...BUILTIN_PROVIDER_IDS, "acp"]);
-
-    for (const [providerId, provider] of Object.entries(providers)) {
-      if (!PROVIDER_ID_PATTERN.test(providerId)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [providerId],
-          message: `Provider ID "${providerId}" must match ${PROVIDER_ID_PATTERN}.`,
-        });
-      }
-
-      const isBuiltinProvider = builtinProviderIdSet.has(providerId);
-      if (!isBuiltinProvider && !provider.extends) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [providerId, "extends"],
-          message: `Custom provider "${providerId}" must declare extends.`,
-        });
-      }
-
-      if (!isBuiltinProvider && !provider.label) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [providerId, "label"],
-          message: `Custom provider "${providerId}" must declare label.`,
-        });
-      }
-
-      if (provider.extends && !validExtendsValues.has(provider.extends)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [providerId, "extends"],
-          message: `Provider "${providerId}" extends unknown provider "${provider.extends}".`,
-        });
-      }
-
-      if (provider.extends === "acp" && !provider.command) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [providerId, "command"],
-          message: `Provider "${providerId}" extending "acp" must declare command.`,
-        });
-      }
-    }
-  });
 
 function isLegacyProviderEntry(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -291,6 +261,17 @@ export const PersistedConfigSchema = z
           })
           .strict()
           .optional(),
+        serviceProxy: z
+          .object({
+            // COMPAT(serviceProxyEnabled): added 2026-06-02, remove after 2026-12-02.
+            // Parsed only to suppress optional public/listen layers for old configs;
+            // localhost service proxying remains always enabled.
+            enabled: z.boolean().optional(),
+            listen: z.string().optional(),
+            publicBaseUrl: z.string().url().optional(),
+          })
+          .strict()
+          .optional(),
         auth: DaemonAuthSchema.optional(),
         workspaces: DaemonWorkspaceConfigSchema.optional(),
       })
@@ -310,9 +291,11 @@ export const PersistedConfigSchema = z
       .optional(),
 
     providers: ProvidersSchema.optional(),
+    worktrees: WorktreesConfigSchema.optional(),
     agents: z
       .object({
         providers: z.preprocess(normalizeAgentProviders, ProviderOverridesSchema).optional(),
+        metadataGeneration: AgentMetadataGenerationSchema.optional(),
       })
       .strict()
       .optional(),

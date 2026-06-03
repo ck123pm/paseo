@@ -63,76 +63,15 @@ describe("PersistedConfigSchema daemon relay config", () => {
   });
 });
 
-describe("PersistedConfigSchema daemon workspace polling config", () => {
-  test("accepts optional workspace polling intervals", () => {
+describe("PersistedConfigSchema worktrees config", () => {
+  test("accepts optional worktree root", () => {
     const parsed = PersistedConfigSchema.parse({
-      daemon: {
-        workspaces: {
-          git: {
-            backgroundFetchIntervalMs: 900_000,
-            selfHealIntervalMs: 300_000,
-            workingTreeWatchFallbackRefreshMs: 60_000,
-          },
-          reconcileIntervalMs: 300_000,
-        },
+      worktrees: {
+        root: "/mnt/fast/paseo-worktrees",
       },
     });
 
-    expect(parsed.daemon?.workspaces).toEqual({
-      git: {
-        backgroundFetchIntervalMs: 900_000,
-        selfHealIntervalMs: 300_000,
-        workingTreeWatchFallbackRefreshMs: 60_000,
-      },
-      reconcileIntervalMs: 300_000,
-    });
-  });
-
-  test("rejects non-positive or non-integer workspace polling intervals", () => {
-    const result = PersistedConfigSchema.safeParse({
-      daemon: {
-        workspaces: {
-          git: {
-            backgroundFetchIntervalMs: 0,
-            selfHealIntervalMs: -1,
-            workingTreeWatchFallbackRefreshMs: 1.5,
-          },
-          reconcileIntervalMs: 0,
-        },
-      },
-    });
-
-    expect(result.success).toBe(false);
-  });
-});
-
-describe("PersistedConfigSchema app local web config", () => {
-  test("accepts optional local web host and port", () => {
-    const parsed = PersistedConfigSchema.parse({
-      app: {
-        localWeb: {
-          host: "0.0.0.0",
-          port: 4310,
-        },
-      },
-    });
-
-    expect(parsed.app?.localWeb).toEqual({
-      host: "0.0.0.0",
-      port: 4310,
-    });
-  });
-
-  test("rejects non-positive local web ports", () => {
-    const result = PersistedConfigSchema.safeParse({
-      app: {
-        localWeb: {
-          port: 0,
-        },
-      },
-    });
-
-    expect(result.success).toBe(false);
+    expect(parsed.worktrees?.root).toBe("/mnt/fast/paseo-worktrees");
   });
 });
 
@@ -205,6 +144,26 @@ describe("PersistedConfigSchema agent provider runtime settings", () => {
     });
 
     expect(result.success).toBe(false);
+  });
+
+  test("accepts metadata generation provider fallbacks", () => {
+    const parsed = PersistedConfigSchema.parse({
+      agents: {
+        metadataGeneration: {
+          providers: [
+            { provider: "claude", model: "haiku" },
+            { provider: "codex", model: "gpt-5.4-mini", thinkingOptionId: "low" },
+          ],
+        },
+      },
+    });
+
+    expect(parsed.agents?.metadataGeneration).toEqual({
+      providers: [
+        { provider: "claude", model: "haiku" },
+        { provider: "codex", model: "gpt-5.4-mini", thinkingOptionId: "low" },
+      ],
+    });
   });
 });
 
