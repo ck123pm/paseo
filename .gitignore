@@ -71,6 +71,8 @@ CLAUDE.local.md
 
 # Local agent/tooling artifacts (do not commit)
 PLAN.md
+.codegraph/
+.cursor/
 .valknut/
 valknut-report.html/
 valknut-report.json/

@@ -1357,7 +1357,7 @@ export class ClaudeAgentClient implements AgentClient {
       return [];
     }
     const limit = options?.limit ?? 20;
-    const candidates = await collectRecentClaudeSessions(projectsRoot, limit * 3);
+    const candidates = await collectRecentClaudeSessions(projectsRoot, limit * 3, options?.cwd);
     const parsed = await Promise.all(
       candidates.map((candidate) => parseClaudeSessionDescriptor(candidate.path, candidate.mtime)),
     );
@@ -4860,16 +4860,18 @@ async function pathExists(target: string): Promise<boolean> {
 async function collectRecentClaudeSessions(
   root: string,
   limit: number,
+  cwd?: string,
 ): Promise<ClaudeSessionCandidate[]> {
   let projectDirs: string[];
   try {
-    projectDirs = await fsPromises.readdir(root);
+    projectDirs = cwd
+      ? collectClaudeProjectDirNamesForCwd(cwd).map((dirName) => path.join(root, dirName))
+      : (await fsPromises.readdir(root)).map((dirName) => path.join(root, dirName));
   } catch {
     return [];
   }
   const projectFileLists = await Promise.all(
-    projectDirs.map(async (dirName) => {
-      const projectPath = path.join(root, dirName);
+    projectDirs.map(async (projectPath) => {
       try {
         const stats = await fsPromises.stat(projectPath);
         if (!stats.isDirectory()) return { projectPath, files: [] as string[] };
@@ -4897,6 +4899,21 @@ async function collectRecentClaudeSessions(
     (entry): entry is ClaudeSessionCandidate => entry !== null,
   );
   return candidates.sort((a, b) => b.mtime.getTime() - a.mtime.getTime()).slice(0, limit);
+}
+
+function collectClaudeProjectDirNamesForCwd(cwd: string): string[] {
+  const candidates = new Set<string>([cwd]);
+  try {
+    candidates.add(fs.realpathSync(cwd));
+  } catch {
+    // The original cwd may no longer exist; Claude still keys history by the string path.
+  }
+  try {
+    candidates.add(fs.realpathSync.native(cwd));
+  } catch {
+    // Native realpath is an extra Windows-friendly variant when available.
+  }
+  return Array.from(candidates, sanitizeClaudeProjectPath);
 }
 
 interface ClaudeSessionDescriptorAccumulator {

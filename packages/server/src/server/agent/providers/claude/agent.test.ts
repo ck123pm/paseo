@@ -18,6 +18,34 @@ interface TestClaudeSession {
   convertUsage(message: SDKMessage): AgentUsage | undefined;
 }
 
+function claudeProjectDir(configDir: string, cwd: string): string {
+  return path.join(configDir, "projects", cwd.replace(/[\\/._:]/g, "-"));
+}
+
+function claudeTranscriptPath(configDir: string, cwd: string, sessionId: string): string {
+  return path.join(claudeProjectDir(configDir, cwd), `${sessionId}.jsonl`);
+}
+
+async function writeClaudeTranscript(
+  configDir: string,
+  cwd: string,
+  sessionId: string,
+  prompt: string,
+): Promise<void> {
+  const projectDir = claudeProjectDir(configDir, cwd);
+  await fs.mkdir(projectDir, { recursive: true });
+  await fs.writeFile(
+    claudeTranscriptPath(configDir, cwd, sessionId),
+    `${JSON.stringify({
+      type: "user",
+      sessionId,
+      cwd,
+      message: { role: "user", content: prompt },
+    })}\n`,
+    "utf-8",
+  );
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -993,6 +1021,51 @@ describe("ClaudeAgentSession context window usage", () => {
       await session.close();
 
       await expect(fs.access(sessionFile)).resolves.toBeUndefined();
+    } finally {
+      if (previousConfigDir === undefined) {
+        delete process.env.CLAUDE_CONFIG_DIR;
+      } else {
+        process.env.CLAUDE_CONFIG_DIR = previousConfigDir;
+      }
+      await fs.rm(tmpConfigDir, { recursive: true, force: true });
+    }
+  });
+
+  test("listPersistedAgents scans the requested cwd instead of truncating to recent global sessions", async () => {
+    const tmpConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "paseo-claude-import-"));
+    const previousConfigDir = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = tmpConfigDir;
+
+    try {
+      const targetCwd = path.join(tmpConfigDir, "workspace", "target");
+      const targetSessionId = "target-session";
+      await writeClaudeTranscript(tmpConfigDir, targetCwd, targetSessionId, "Target prompt");
+      const targetTime = new Date("2026-04-30T10:00:00.000Z");
+      await fs.utimes(
+        claudeTranscriptPath(tmpConfigDir, targetCwd, targetSessionId),
+        targetTime,
+        targetTime,
+      );
+
+      for (let index = 0; index < 3; index += 1) {
+        const cwd = path.join(tmpConfigDir, "workspace", `other-${index}`);
+        const sessionId = `other-session-${index}`;
+        await writeClaudeTranscript(tmpConfigDir, cwd, sessionId, `Other prompt ${index}`);
+        const mtime = new Date(`2026-04-30T11:0${index}:00.000Z`);
+        await fs.utimes(claudeTranscriptPath(tmpConfigDir, cwd, sessionId), mtime, mtime);
+      }
+
+      const client = new ClaudeAgentClient({
+        logger,
+        resolveBinary: async () => "/test/claude/bin",
+      });
+
+      const descriptors = await client.listPersistedAgents({ cwd: targetCwd, limit: 1 });
+
+      expect(descriptors).toHaveLength(1);
+      expect(descriptors[0]?.sessionId).toBe(targetSessionId);
+      expect(descriptors[0]?.cwd).toBe(targetCwd);
+      expect(descriptors[0]?.timeline).toEqual([{ type: "user_message", text: "Target prompt" }]);
     } finally {
       if (previousConfigDir === undefined) {
         delete process.env.CLAUDE_CONFIG_DIR;
