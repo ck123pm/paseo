@@ -1,0 +1,21 @@
+packages/app/src/app/host-runtime-bootstrap.ts
+  s_40a973a295dc93::t_cd5978b82e2384 4,82-84,94-107
+packages/app/src/app/host-runtime-bootstrap.test.ts
+  s_40a973a295dc93::t_5f04ed954916c2 4,154,161,164-174,181-191,216,223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10-trip",
+  "base_commit_sha": "94e6214f6be4047cc1e284150026212dad99c3de",
+  "prompts": {},
+  "sessions": {
+    "s_40a973a295dc93": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e8bca-f1ca-7ac1-89df-6ebc4e83a282",
+        "model": "gpt-5.5"
+      },
+      "human_author": "jianshuliu <530059628@qq.com>"
+    }
+  }
+}
