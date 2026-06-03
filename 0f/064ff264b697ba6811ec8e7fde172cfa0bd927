@@ -1,0 +1,24 @@
+packages/server/src/server/agent/providers/claude/agent.ts
+  s_0d1e245310efb9::t_c15fc43950943d 1360,4863,4867-4869,4874,4904-4918
+packages/server/src/server/agent/providers/claude/agent.test.ts
+  s_0d1e245310efb9::t_ba89de17ed18a8 21-48
+  s_0d1e245310efb9::t_b505ceb9842326 1034-1068
+.gitignore
+  s_0d1e245310efb9::t_7d90ffebbbf5ba 74-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10-trip",
+  "base_commit_sha": "0f064ff264b697ba6811ec8e7fde172cfa0bd927",
+  "prompts": {},
+  "sessions": {
+    "s_0d1e245310efb9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e8be8-3a0a-78b0-8e92-5b3d774936a8",
+        "model": "gpt-5.5"
+      },
+      "human_author": "jianshuliu <530059628@qq.com>"
+    }
+  }
+}
