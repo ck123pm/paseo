@@ -1,6 +1,6 @@
 {
   "name": "@ck123pm/paseo-server",
-  "version": "0.1.90",
+  "version": "0.1.91",
   "description": "Paseo backend server",
   "files": [
     "dist/server",
