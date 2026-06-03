@@ -1,0 +1,19 @@
+packages/server/src/server/session.ts
+  s_4b091dce536529::t_658cee5432ee16 5841-5855
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10-trip",
+  "base_commit_sha": "6ccf405b8001fcaec2d0cc12079d7d3201550b6c",
+  "prompts": {},
+  "sessions": {
+    "s_4b091dce536529": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "753d7731-d449-45c7-90cb-25457944aea5",
+        "model": "global.anthropic.claude-sonnet-4-6"
+      },
+      "human_author": "jianshuliu <530059628@qq.com>"
+    }
+  }
+}
