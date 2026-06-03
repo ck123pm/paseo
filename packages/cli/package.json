@@ -24,7 +24,7 @@
     "test:e2e:lifecycle": "npx tsx tests/e2e/agent-lifecycle.test.ts"
   },
   "dependencies": {
-    "@ck123pm/paseo-server": "0.1.89",
+    "@ck123pm/paseo-server": "0.1.90",
     "@clack/prompts": "^1.0.0",
     "@getpaseo/client": "0.1.89",
     "@getpaseo/protocol": "0.1.89",
