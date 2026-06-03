@@ -1,0 +1,21 @@
+packages/server/src/server/agent/import-sessions.ts
+  s_539eb026f94374::t_b12e7dcdbdfcd0 332
+packages/server/src/server/agent/import-sessions.test.ts
+  s_539eb026f94374::t_db213cae9ea255 318-354
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10-trip",
+  "base_commit_sha": "d8de436a1b5f851b71f7230b9167c1588b34759f",
+  "prompts": {},
+  "sessions": {
+    "s_539eb026f94374": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c012f40c-636e-4687-aa40-d6ef95dc1abd",
+        "model": "global.anthropic.claude-opus-4-7"
+      },
+      "human_author": "jianshuliu <530059628@qq.com>"
+    }
+  }
+}
