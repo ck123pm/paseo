@@ -5838,10 +5838,21 @@ export class Session {
         }
       }
     } catch (error) {
-      this.sessionLogger.error(
-        { err: error, cwd, path: requestedPath },
-        `Failed to fulfill file explorer request for workspace ${cwd}`,
-      );
+      const isNotFound =
+        (error as NodeJS.ErrnoException | null)?.code === "ENOENT" ||
+        (error instanceof Error && error.message === "Requested path is not a directory") ||
+        (error instanceof Error && error.message === "Requested path is not a file");
+      if (isNotFound) {
+        this.sessionLogger.debug(
+          { cwd, path: requestedPath },
+          `File explorer path not found in workspace ${cwd}`,
+        );
+      } else {
+        this.sessionLogger.error(
+          { err: error, cwd, path: requestedPath },
+          `Failed to fulfill file explorer request for workspace ${cwd}`,
+        );
+      }
       this.emit({
         type: "file_explorer_response",
         payload: {
