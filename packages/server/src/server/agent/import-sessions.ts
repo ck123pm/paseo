@@ -329,6 +329,7 @@ async function collectImportedProviderSessionHandles(
   }
 
   for (const record of await agentStorage.list()) {
+    if (record.archivedAt) continue;
     collectProviderSessionHandleKeys(handles, record.provider, record.persistence);
   }
 

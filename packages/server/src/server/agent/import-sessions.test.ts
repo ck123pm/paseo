@@ -315,6 +315,43 @@ test("listImportableProviderSessions keeps realpath-equivalent cwd matches", asy
   expect(result.entries.map((entry) => entry.providerHandleId)).toEqual(["pi-handle"]);
 });
 
+test("listImportableProviderSessions still surfaces sessions whose stored record is archived", async () => {
+  const cwd = "/tmp/project";
+  const descriptor = makeDescriptor({
+    sessionId: "archived-session",
+    nativeHandle: "archived-handle",
+    cwd,
+    title: "Archived session",
+    lastActivityAt: "2026-04-30T12:00:00.000Z",
+    firstPrompt: "archived prompt",
+  });
+
+  const result = await listImportableProviderSessions({
+    request: makeRequest({ cwd, providers: ["codex"] }),
+    agentManager: {
+      listAgents: () => [],
+      listImportablePersistedAgents: async () => [descriptor],
+    } satisfies Pick<AgentManager, "listAgents" | "listImportablePersistedAgents">,
+    agentStorage: {
+      list: async () => [
+        {
+          provider: "codex",
+          archivedAt: "2026-04-30T13:00:00.000Z",
+          persistence: {
+            provider: "codex",
+            sessionId: "archived-session",
+            nativeHandle: "archived-handle",
+          },
+        } as StoredAgentRecord,
+      ],
+    } satisfies Pick<AgentStorage, "list">,
+    providerSnapshotManager: { getProviderLabel: () => "Codex" },
+  });
+
+  expect(result.entries.map((entry) => entry.providerHandleId)).toEqual(["archived-handle"]);
+  expect(result.filteredAlreadyImportedCount).toBe(0);
+});
+
 test("listImportableProviderSessions rejects invalid since values", async () => {
   await expect(
     listImportableProviderSessions({
