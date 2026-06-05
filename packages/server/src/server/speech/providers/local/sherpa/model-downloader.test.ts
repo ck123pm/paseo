@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import pino from "pino";
 
-import { ensureSherpaOnnxModel, getSherpaOnnxModelDir } from "./model-downloader.js";
+import {
+  buildTarExtractCommand,
+  ensureSherpaOnnxModel,
+  getSherpaOnnxModelDir,
+} from "./model-downloader.js";
 
 function makeTmpDir(): string {
   return mkdtempSync(path.join(tmpdir(), "paseo-speech-models-"));
@@ -19,6 +23,16 @@ describe("sherpa model downloader", () => {
       "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8",
     );
     expect(getSherpaOnnxModelDir(modelsDir, "kokoro-en-v0_19")).toContain("kokoro-en-v0_19");
+  });
+
+  test("buildTarExtractCommand uses a relative archive path", () => {
+    const destDir = makeTmpDir();
+    const archivePath = path.join(destDir, ".downloads", "kokoro-en-v0_19.tar.bz2");
+
+    expect(buildTarExtractCommand(archivePath, destDir)).toEqual({
+      args: ["xf", path.join(".downloads", "kokoro-en-v0_19.tar.bz2")],
+      cwd: destDir,
+    });
   });
 
   test("ensureSherpaOnnxModel succeeds without downloading when files exist", async () => {

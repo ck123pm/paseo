@@ -19,6 +19,18 @@ export function getSherpaOnnxModelDir(modelsDir: string, modelId: SherpaOnnxMode
   return path.join(modelsDir, spec.extractedDir);
 }
 
+export interface TarExtractCommand {
+  args: string[];
+  cwd: string;
+}
+
+export function buildTarExtractCommand(archivePath: string, destDir: string): TarExtractCommand {
+  return {
+    args: ["xf", path.relative(destDir, archivePath)],
+    cwd: destDir,
+  };
+}
+
 async function hasRequiredFiles(modelDir: string, requiredFiles: string[]): Promise<boolean> {
   const results = await Promise.all(
     requiredFiles.map(async (rel) => {
@@ -72,7 +84,9 @@ async function extractTarArchive(archivePath: string, destDir: string): Promise<
   await mkdir(destDir, { recursive: true });
 
   await new Promise<void>((resolve, reject) => {
-    const child = spawnProcess("tar", ["xf", archivePath, "-C", destDir], {
+    const command = buildTarExtractCommand(archivePath, destDir);
+    const child = spawnProcess("tar", command.args, {
+      cwd: command.cwd,
       stdio: "inherit",
     });
     child.on("error", reject);
